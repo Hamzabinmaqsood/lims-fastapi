@@ -1,5 +1,6 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env")
@@ -11,12 +12,15 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ACCESS_TOKEN_MINUTES: int = 60
     REFRESH_TOKEN_DAYS: int = 7
+
     @field_validator("DATABASE_URL")
     @classmethod
     def use_asyncpg_driver(cls, v: str) -> str:
         if v.startswith("postgresql://"):
-            return v.replace("postgresql://", "postgresql+asyncpg://", 1)
+            v = v.replace("postgresql://", "postgresql+asyncpg://", 1)
+        if "sslmode=" in v:  # Neon/cloud URLs
+            v = v.split("?")[0] + "?ssl=require"
         return v
 
-settings = Settings()
 
+settings = Settings()
