@@ -8,7 +8,7 @@ class SignupIn(BaseModel):
     province_id: int
     district_id: int
     tehsil_id: int
-    locality_id: int
+    city_village_id: int
     reference_code: str | None = None
 
 
