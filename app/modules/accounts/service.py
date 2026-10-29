@@ -10,6 +10,8 @@ from app.modules.locations.models import Locality
 
 import secrets
 
+from app.modules.accounts.schemas import ProfileUpdate
+
 
 # No 0/O or 1/I, so codes are easy to read and type.
 ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -51,3 +53,20 @@ async def signup(db: AsyncSession, data: SignupIn) -> User:
     await db.commit()
     return user
 
+
+async def update_profile(db: AsyncSession, user: User, data: ProfileUpdate) -> User:
+    changes = data.model_dump(exclude_unset=True)  # only fields actually sent
+
+    if "locality_id" in changes and await db.get(Locality, changes["locality_id"]) is None:
+        raise HTTPException(400, {"locality_id": ["Invalid city/village."]})
+    if changes.get("cnic"):
+        taken = await db.scalar(
+            select(User.id).where(User.cnic == changes["cnic"], User.id != user.id)
+        )
+        if taken:
+            raise HTTPException(400, {"cnic": ["This CNIC is already registered."]})
+
+    for field, value in changes.items():
+        setattr(user, field, value)
+    await db.commit()
+    return user
