@@ -3,7 +3,7 @@ from sqlalchemy import select
 from app.modules.users.models import User
 from tests.conftest import TestSession
 
-USER = {"username": "Hamza", "mobile_number": "03001234567", "password": "secret123"}
+USER = {"username": "Hamza", "mobile_number": "03001234567", "password": "secret123", "locality_id": 1,}
 
 
 async def signup_and_login(client) -> dict:
@@ -78,3 +78,36 @@ async def test_refresh_gives_new_pair(client):
     r = await client.post("/api/token/refresh/", json={"refresh": tokens["refresh"]})
     assert r.status_code == 200
     assert "access" in r.json()
+
+async def test_signup_invalid_locality_returns_400(client):
+    r = await client.post("/api/user/signup/", json={**USER, "locality_id": 999})
+    assert r.status_code == 400
+
+async def auth_headers(client) -> dict:
+    tokens = await signup_and_login(client)
+    return {"Authorization": f"Bearer {tokens['access']}"}
+
+
+async def test_profile_completion_increases(client):
+    h = await auth_headers(client)
+    r = await client.get("/api/user/profile/", headers=h)
+    assert r.json()["profile_completion"] == 50  # username + mobile + locality
+
+    r = await client.patch("/api/user/profile/", headers=h, json={"cnic": "3520212345671"})
+    assert r.json()["profile_completion"] == 70
+
+
+async def test_signup_with_reference_code(client):
+    first = await client.post("/api/user/signup/", json=USER)
+    h = await auth_headers(client)
+    code = (await client.get("/api/user/profile/", headers=h)).json()["reference_code"]
+
+    r = await client.post("/api/user/signup/", json={
+        **USER, "mobile_number": "03009999999", "reference_code": code,
+    })
+    assert r.status_code == 201
+
+
+async def test_signup_with_bad_reference_code_400(client):
+    r = await client.post("/api/user/signup/", json={**USER, "reference_code": "NOPE1234"})
+    assert r.status_code == 400

@@ -1,6 +1,5 @@
 from datetime import datetime
-
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, String
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, String, Integer, CheckConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, CreatedAtMixin, IdMixin
@@ -33,4 +32,19 @@ class User(IdMixin, CreatedAtMixin, Base):
     is_superuser: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     last_login: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    locality_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("localities.id", ondelete="RESTRICT"), index=True
+    )
+
     role: Mapped[Role] = relationship(lazy="joined")
+
+    __table_args__ = (
+        CheckConstraint("cnic ~ '^[0-9]{13}$'", name="cnic_13_digits"),
+    )
+
+    cnic: Mapped[str | None] = mapped_column(String(13), unique=True)
+    profile_picture: Mapped[str | None] = mapped_column(String(255))
+    reference_code: Mapped[str] = mapped_column(String(8), unique=True)
+    referred_by_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )

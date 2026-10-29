@@ -1,6 +1,6 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import insert
+from sqlalchemy import insert, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -24,6 +24,18 @@ async def fresh_db():
         await conn.execute(
             insert(Role), [{"name": n} for n in ("Farmer", "Response_Team", "SuperAdmin")]
         )
+        await conn.execute(text(
+            "INSERT INTO provinces (id, name, latitude, longitude) VALUES (1, 'Punjab', 31.17, 72.70);"
+        ))
+        await conn.execute(text(
+            "INSERT INTO districts (id, province_id, name, latitude, longitude) VALUES (1, 1, 'Lahore', 31.52, 74.35);"
+        ))
+        await conn.execute(text(
+            "INSERT INTO tehsils (id, district_id, name, latitude, longitude) VALUES (1, 1, 'Lahore City', 31.54, 74.34);"
+        ))
+        await conn.execute(text(
+            "INSERT INTO localities (id, tehsil_id, name, kind, latitude, longitude) VALUES (1, 1, 'Lahore', 'city', 31.52, 74.35);"
+        ))
 
 
 async def get_test_db():
