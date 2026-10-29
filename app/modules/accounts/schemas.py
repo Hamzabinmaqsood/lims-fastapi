@@ -8,8 +8,12 @@ class SignupIn(BaseModel):
     province_id: int
     district_id: int
     tehsil_id: int
-    city_village_id: int
+    locality_id: int = Field(..., alias="city_village_id")
     reference_code: str | None = None
+
+    model_config = {
+        "populate_by_name": True  # Allows instantiating using locality_id inside Python
+    }
 
 
 class SignupOut(BaseModel):
