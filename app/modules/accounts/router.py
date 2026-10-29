@@ -4,7 +4,7 @@ from app.db.session import DB
 from app.modules.accounts import service
 from app.modules.accounts.schemas import SignupIn, SignupOut
 from app.core.deps import CurrentUser
-from app.modules.accounts.profile import profile_data
+# from app.modules.accounts.profile import profile_data
 from app.modules.accounts.schemas import ProfileUpdate
 
 router = APIRouter(prefix="/user", tags=["accounts"])

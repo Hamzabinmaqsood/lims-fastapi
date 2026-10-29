@@ -3,7 +3,7 @@ from sqlalchemy import select
 from app.modules.users.models import User
 from tests.conftest import TestSession
 
-USER = {"username": "Hamza", "mobile_number": "03001234567", "password": "secret123", "locality_id": 1,}
+USER = {"username": "Hamza", "mobile_number": "03001234567", "password": "secret123","province_id":1, "district_id": 1, "tehsil_id":1,  "locality_id": 1,}
 
 
 async def signup_and_login(client) -> dict:
@@ -79,7 +79,7 @@ async def test_refresh_gives_new_pair(client):
     assert r.status_code == 200
     assert "access" in r.json()
 
-async def test_signup_invalid_locality_returns_400(client):
+async def test_signup_mismatched_location_returns_400(client):
     r = await client.post("/api/user/signup/", json={**USER, "locality_id": 999})
     assert r.status_code == 400
 
@@ -110,4 +110,9 @@ async def test_signup_with_reference_code(client):
 
 async def test_signup_with_bad_reference_code_400(client):
     r = await client.post("/api/user/signup/", json={**USER, "reference_code": "NOPE1234"})
+    assert r.status_code == 400
+
+
+async def test_signup_wrong_district_for_tehsil_400(client):
+    r = await client.post("/api/user/signup/", json={**USER, "district_id": 2})
     assert r.status_code == 400

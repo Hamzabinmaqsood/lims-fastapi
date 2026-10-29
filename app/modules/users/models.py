@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, String, Integer, CheckConstraint, text
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, String, Integer, CheckConstraint, text, SmallInteger
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, CreatedAtMixin, IdMixin
@@ -32,8 +32,15 @@ class User(IdMixin, CreatedAtMixin, Base):
     is_superuser: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     last_login: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    locality_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("localities.id", ondelete="RESTRICT"), index=True
+    locality_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("localities.id", ondelete="RESTRICT"), index=True)
+    province_id: Mapped[int | None] = mapped_column(
+        SmallInteger, ForeignKey("provinces.id", ondelete="RESTRICT"), index=True
+    )
+    district_id: Mapped[int | None] = mapped_column(
+        SmallInteger, ForeignKey("districts.id", ondelete="RESTRICT"), index=True
+    )
+    tehsil_id: Mapped[int | None] = mapped_column(
+        SmallInteger, ForeignKey("tehsils.id", ondelete="RESTRICT"), index=True
     )
 
     role: Mapped[Role] = relationship(lazy="joined")
