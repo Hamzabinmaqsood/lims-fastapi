@@ -19,6 +19,7 @@ TestSession = async_sessionmaker(engine, expire_on_commit=False)
 async def fresh_db():
     """Before EVERY test: empty tables + the 3 roles."""
     async with engine.begin() as conn:
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS postgis"))
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
         await conn.execute(

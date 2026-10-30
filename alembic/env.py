@@ -60,9 +60,15 @@ def run_migrations_offline() -> None:
     with context.begin_transaction():
         context.run_migrations()
 
+def include_object(obj, name, type_, reflected, compare_to):
+    """Skip tables that belong to PostGIS, not to us."""
+    if type_ == "table" and reflected and compare_to is None and name == "spatial_ref_sys":
+        return False
+    return True
+
 
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(connection=connection, target_metadata=target_metadata, include_object=include_object,)
 
     with context.begin_transaction():
         context.run_migrations()
