@@ -1,6 +1,6 @@
 import secrets
 
-from fastapi import HTTPException
+from fastapi import HTTPException,UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,7 +8,7 @@ from app.core.security import hash_password
 from app.modules.accounts.schemas import ProfileUpdate, SignupIn
 from app.modules.locations.models import District, Locality, Province, Tehsil
 from app.modules.users.models import ROLE_FARMER, Role, User
-
+from app.core.storage import upload_image
 # ---------------------------------------------------------------- reference codes
 
 # No 0/O or 1/I, so codes are easy to read and type.
@@ -127,14 +127,34 @@ async def update_profile(db: AsyncSession, user: User, data: ProfileUpdate) -> U
         if len(sent) != 4:
             raise HTTPException(400, {"location": ["Send all of province_id, district_id, tehsil_id and locality_id."]})
         await validate_location(db, *(changes[f] for f in LOCATION_FIELDS))
-    if changes.get("cnic"):
-        taken = await db.scalar(
-            select(User.id).where(User.cnic == changes["cnic"], User.id != user.id)
-        )
-        if taken:
-            raise HTTPException(400, {"cnic": ["This CNIC is already registered."]})
+    # if changes.get("cnic"):
+    #     taken = await db.scalar(
+    #         select(User.id).where(User.cnic == changes["cnic"], User.id != user.id)
+    #     )
+    #     if taken:
+    #         raise HTTPException(400, {"cnic": ["This CNIC is already registered."]})
 
     for field, value in changes.items():
         setattr(user, field, value)
+    await db.commit()
+    return user
+
+async def update_details(
+    db: AsyncSession,
+    user: User,
+    cnic: str | None,
+    email: str | None,
+    profile_picture: UploadFile | None,
+) -> User:
+    if cnic is not None:
+        taken = await db.scalar(select(User.id).where(User.cnic == cnic, User.id != user.id))
+        if taken:
+            raise HTTPException(400, {"cnic": ["This CNIC is already registered."]})
+        user.cnic = cnic
+    if email is not None:
+        user.email = email
+    if profile_picture is not None:
+        user.profile_picture = await upload_image(profile_picture, folder="lims/profile_pictures")
+
     await db.commit()
     return user

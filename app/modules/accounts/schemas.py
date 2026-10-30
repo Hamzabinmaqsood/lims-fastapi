@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, Field, EmailStr, ConfigDict
 
 
 class SignupIn(BaseModel):
@@ -24,10 +24,15 @@ class SignupOut(BaseModel):
 
 
 class ProfileUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     username: str | None = Field(None, min_length=1, max_length=150)
-    email: EmailStr | None = None
-    cnic: str | None = Field(None, pattern=r"^\d{13}$")
     province_id: int | None = None
     district_id: int | None = None
     tehsil_id: int | None = None
     locality_id: int | None = None
+
+class DetailsIn(BaseModel):
+    """Validation for the text fields of the details form."""
+
+    cnic: str | None = Field(None, pattern=r"^\d{13}$")
+    email: EmailStr | None = None

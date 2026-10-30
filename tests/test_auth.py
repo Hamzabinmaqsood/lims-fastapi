@@ -93,7 +93,7 @@ async def test_profile_completion_increases(client):
     r = await client.get("/api/user/profile/", headers=h)
     assert r.json()["profile_completion"] == 50  # username + mobile + locality
 
-    r = await client.patch("/api/user/profile/", headers=h, json={"cnic": "3520212345671"})
+    r = await client.patch("/api/user/profile/details/", headers=h, data={"cnic": "3520212345671"})
     assert r.json()["profile_completion"] == 70
 
 
@@ -116,3 +116,27 @@ async def test_signup_with_bad_reference_code_400(client):
 async def test_signup_wrong_district_for_tehsil_400(client):
     r = await client.post("/api/user/signup/", json={**USER, "district_id": 2})
     assert r.status_code == 400
+
+async def test_details_with_picture(client, monkeypatch):
+    async def fake_upload(file, folder):
+        return "https://res.cloudinary.com/demo/image/upload/fake.jpg"
+
+    monkeypatch.setattr("app.modules.accounts.service.upload_image", fake_upload)
+    h = await auth_headers(client)
+
+    r = await client.patch(
+        "/api/user/profile/details/",
+        headers=h,
+        data={"cnic": "3520212345671", "email": "hamza@test.com"},
+        files={"profile_picture": ("me.jpg", b"fakebytes", "image/jpeg")},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["profile_picture"].startswith("https://")
+    assert body["profile_completion"] == 100
+
+
+async def test_details_bad_cnic_422(client):
+    h = await auth_headers(client)
+    r = await client.patch("/api/user/profile/details/", headers=h, data={"cnic": "123"})
+    assert r.status_code == 422

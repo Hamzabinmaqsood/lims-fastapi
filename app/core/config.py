@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ACCESS_TOKEN_MINUTES: int = 60
     REFRESH_TOKEN_DAYS: int = 7
+    CLOUDINARY_CLOUD_NAME: str = ""
+    CLOUDINARY_API_KEY: str = ""
+    CLOUDINARY_API_SECRET: str = ""
 
     @field_validator("DATABASE_URL")
     @classmethod
