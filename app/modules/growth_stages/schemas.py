@@ -1,7 +1,9 @@
 from decimal import Decimal
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator,StringConstraints
+
+StageName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
 
 IndexName = Literal["NDVI", "SAVI", "MSAVI", "NDMI", "NDRE", "RECI"]
 IndexValue = Field(ge=-1, le=1, max_digits=4, decimal_places=3)
@@ -23,7 +25,7 @@ class RangeIn(BaseModel):
 
 class StageIn(BaseModel):
     crop_id: int
-    name: str = Field(max_length=100)
+    name: StageName
     day_from: int = Field(ge=0, le=366)
     day_to: int = Field(ge=0, le=366)
     ranges: list[RangeIn] = []
@@ -57,3 +59,4 @@ class StageOut(BaseModel):
     day_from: int
     day_to: int
     ranges: list[RangeOut]
+

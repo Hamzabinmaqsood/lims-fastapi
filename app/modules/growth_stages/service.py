@@ -1,11 +1,13 @@
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.crops.models import CropType
 from app.modules.growth_stages.models import GrowthStage, IndexRange
 from app.modules.growth_stages.schemas import StageIn
 
+from starlette.concurrency import run_in_threadpool
+from app.modules.growth_stages.importer import build_stages, read_rows
 
 async def list_stages(db: AsyncSession, crop_id: int) -> list[GrowthStage]:
     q = select(GrowthStage).where(GrowthStage.crop_id == crop_id).order_by(GrowthStage.day_from)
@@ -68,3 +70,33 @@ async def replace_stage(db: AsyncSession, stage_id: int, data: StageIn) -> Growt
 async def delete_stage(db: AsyncSession, stage_id: int) -> None:
     await db.delete(await get_stage(db, stage_id))
     await db.commit()
+
+
+async def import_stages(db: AsyncSession, crop_id: int, content: bytes, filename: str) -> dict:
+    if await db.get(CropType, crop_id) is None:
+        raise HTTPException(404, "Crop not found.")
+
+    try:
+        # openpyxl is blocking (sync), so read the file in a worker thread.
+        rows = await run_in_threadpool(read_rows, content, filename)
+    except ValueError as exc:
+        raise HTTPException(400, {"file": [str(exc)]}) from exc
+    except Exception as exc:
+        raise HTTPException(400, {"file": ["Could not read the file. Is it a valid Excel/CSV file?"]}) from exc
+    if not rows:
+        raise HTTPException(400, {"file": ["The file has no data rows."]})
+
+    stages, errors = build_stages(rows, crop_id)
+    if errors:
+        raise HTTPException(400, {"message": "Nothing was imported. Fix these rows and try again.",
+                                  "errors": errors})
+
+    # Replace this crop's stages: delete + insert in ONE transaction.
+    await db.execute(delete(GrowthStage).where(GrowthStage.crop_id == crop_id))
+    for s in stages:
+        db.add(GrowthStage(
+            crop_id=crop_id, name=s.name, day_from=s.day_from, day_to=s.day_to,
+            ranges=[IndexRange(**r.model_dump()) for r in s.ranges],
+        ))
+    await db.commit()
+    return {"crop_id": crop_id, "imported": len(stages)}

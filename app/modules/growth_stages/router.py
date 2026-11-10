@@ -1,9 +1,11 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from app.core.deps import AdminUser, CurrentUser
 from app.db.session import DB
 from app.modules.growth_stages import service
 from app.modules.growth_stages.schemas import StageIn, StageOut
+
+MAX_IMPORT_BYTES = 5 * 1024 * 1024  # 5 MB
 
 router = APIRouter(prefix="/growth-stages", tags=["growth stages"])
 
@@ -26,3 +28,12 @@ async def replace_stage(stage_id: int, data: StageIn, admin: AdminUser, db: DB):
 @router.delete("/{stage_id}/", status_code=204)
 async def delete_stage(stage_id: int, admin: AdminUser, db: DB) -> None:
     await service.delete_stage(db, stage_id)
+
+
+
+@router.post("/import/")
+async def import_stages(admin: AdminUser, db: DB, crop_id: int = Form(...), file: UploadFile = File(...),):
+    content = await file.read(MAX_IMPORT_BYTES + 1)
+    if len(content) > MAX_IMPORT_BYTES:
+        raise HTTPException(400, {"file": ["File must be 5 MB or smaller."]})
+    return await service.import_stages(db, crop_id, content, file.filename or "")
