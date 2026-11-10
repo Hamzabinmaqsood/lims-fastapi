@@ -7,6 +7,8 @@ from app.core.security import decode_token
 from app.db.session import DB
 from app.modules.users.models import User
 
+from app.modules.users.models import ROLE_SUPER_ADMIN
+
 bearer = HTTPBearer(auto_error=False)  # adds the "Authorize" button in Swagger
 
 
@@ -28,3 +30,12 @@ async def get_current_user(
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+async def require_admin(user: CurrentUser) -> User:
+    if not (user.is_superuser or user.role.name == ROLE_SUPER_ADMIN):
+        raise HTTPException(403, "You do not have permission to perform this action.")
+    return user
+
+
+AdminUser = Annotated[User, Depends(require_admin)]
