@@ -1,15 +1,17 @@
 from datetime import date, datetime
 from typing import Annotated
+from pydantic import StringConstraints
 
 from pydantic import BaseModel, ConfigDict, Field
 
 Lat = Annotated[float, Field(ge=-90, le=90)]
 Lng = Annotated[float, Field(ge=-180, le=180)]
 LatLng = tuple[Lat, Lng]  # JSON: [31.52, 74.35]
+FarmName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
 
 
 class FarmIn(BaseModel):
-    name: str = Field("farm", max_length=100)
+    name: FarmName
     boundary: list[LatLng] = Field(min_length=3)  # a shape needs 3+ corners
     crop_season_id: int | None = None
     crop_id: int | None = None
@@ -20,7 +22,7 @@ class FarmIn(BaseModel):
 class FarmUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    name: str | None = Field(None, max_length=100)
+    name: FarmName | None = None
     boundary: list[LatLng] | None = Field(None, min_length=3)
     crop_season_id: int | None = None
     crop_id: int | None = None

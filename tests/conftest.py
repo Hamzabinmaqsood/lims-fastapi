@@ -10,7 +10,7 @@ from app.db.session import get_db
 from app.main import app
 from app.modules.users.models import Role
 
-TEST_DB = "postgresql+asyncpg://postgres:root@localhost:5432/lims_test"
+TEST_DB = "postgresql+asyncpg://postgres:root@localhost:5433/lims_test"
 engine = create_async_engine(TEST_DB, poolclass=NullPool)
 TestSession = async_sessionmaker(engine, expire_on_commit=False)
 

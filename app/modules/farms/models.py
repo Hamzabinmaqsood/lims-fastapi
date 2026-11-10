@@ -6,6 +6,7 @@ from sqlalchemy import BigInteger, Date, ForeignKey, Index, Numeric, SmallIntege
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, CreatedAtMixin, IdMixin
+from sqlalchemy import CheckConstraint 
 
 
 class Farm(IdMixin, CreatedAtMixin, Base):
@@ -13,6 +14,7 @@ class Farm(IdMixin, CreatedAtMixin, Base):
     __table_args__ = (
         # GiST = the special index type for shapes. Makes "farms in this area" fast.
         Index("ix_farms_boundary", "boundary", postgresql_using="gist"),
+        CheckConstraint("length(trim(name)) > 0", name="name_not_blank"),
     )
 
     owner_id: Mapped[int] = mapped_column(
