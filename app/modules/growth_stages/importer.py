@@ -20,7 +20,7 @@ def read_rows(content: bytes, filename: str) -> list[dict[str, str]]:
     if name.endswith(".csv"):
         text = content.decode("utf-8-sig")  # utf-8-sig drops Excel's hidden BOM character
         return [
-            {k.strip().lower(): (v or "").strip() for k, v in row.items() if k}
+            {_header(k): (v or "").strip() for k, v in row.items() if k}
             for row in csv.DictReader(io.StringIO(text))
             if any((v or "").strip() for v in row.values())  # skip blank lines
         ]
@@ -28,7 +28,7 @@ def read_rows(content: bytes, filename: str) -> list[dict[str, str]]:
     if name.endswith(".xlsx"):
         sheet = load_workbook(io.BytesIO(content), read_only=True, data_only=True).active
         rows = sheet.iter_rows(values_only=True)
-        header = [str(h or "").strip().lower() for h in next(rows, [])]
+        header = [_header(h) for h in next(rows, [])]
         result = []
         for values in rows:
             if all(v in (None, "") for v in values):
@@ -102,3 +102,7 @@ def build_stages(rows: list[dict[str, str]], crop_id: int) -> tuple[list[StageIn
                 f"'{a.name}' ({a.day_from}-{a.day_to}) overlaps '{b.name}' ({b.day_from}-{b.day_to})."
             ]})
     return stages, errors
+
+def _header(name) -> str:
+    """'SAVI_LOW', 'savi low', ' Savi  Low ' → 'savi low'."""
+    return " ".join(str(name or "").replace("_", " ").split()).lower()

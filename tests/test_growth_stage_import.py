@@ -69,3 +69,11 @@ async def test_farmer_cannot_import_403(client):
     r = await client.post("/api/growth-stages/import/", headers=farmer,
                           data={"crop_id": "1"}, files=csv_file(GOOD_CSV))
     assert r.status_code == 403
+
+
+async def test_underscore_headers(client):
+    _, admin = await setup(client)
+    text = "Interval Days,Growth Stage,SAVI_LOW,SAVI_HIGH\n0-20,Germination,0.08,0.15\n"
+    await client.post("/api/growth-stages/import/", headers=admin, data={"crop_id": "1"}, files=csv_file(text))
+    stages = (await client.get("/api/growth-stages/", headers=admin, params={"crop_id": 1})).json()
+    assert stages[0]["ranges"][0]["index_name"] == "SAVI"
