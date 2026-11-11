@@ -11,6 +11,10 @@ router = APIRouter(prefix="/farms", tags=["satellite"])
 IndexName = Literal["NDVI", "SAVI", "MSAVI", "NDMI", "NDRE", "RECI"]
 
 
+@router.get("/{farm_id}/satellite/stats/")
+async def farm_index_stats(farm_id: int, user: CurrentUser, db: DB):
+    return await service.farm_index_stats(db, user, farm_id)
+
 @router.get(
     "/{farm_id}/satellite/{index}/",
     response_class=Response,
@@ -19,3 +23,4 @@ IndexName = Literal["NDVI", "SAVI", "MSAVI", "NDMI", "NDRE", "RECI"]
 async def farm_index_image(farm_id: int, index: IndexName, user: CurrentUser, db: DB):
     png = await service.farm_index_png(db, user, farm_id, index)
     return Response(png, media_type="image/png")
+

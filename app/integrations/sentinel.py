@@ -89,7 +89,7 @@ def build_request(poly: Polygon, index: str, days: int = 30) -> dict:
         "input": {
             "bounds": {
                 "geometry": mapping(poly),  # GeoJSON, (lng, lat) order
-                "properties": {"crs": "http://www.opengis.net/def/crs/OGC/1.3/CRS84"},
+                "properties": {"crs": "CRS84"},
             },
             "data": [{
                 "type": "sentinel-2-l2a",
@@ -112,23 +112,128 @@ def build_request(poly: Polygon, index: str, days: int = 30) -> dict:
     }
 
 
-async def fetch_index_png(poly: Polygon, index: str) -> bytes:
-    """PNG of `index` over the polygon, from the least cloudy image of the last 30 days."""
+# async def fetch_index_png(poly: Polygon, index: str) -> bytes:
+#     """PNG of `index` over the polygon, from the least cloudy image of the last 30 days."""
+#     if not settings.SH_CLIENT_ID:
+#         raise HTTPException(503, "Satellite service is not configured.")
+#     try:
+#         async with httpx.AsyncClient(timeout=60) as client:
+#             token = await _get_token(client)
+#             r = await client.post(
+#                 f"{settings.SH_BASE_URL}/api/v1/process",
+#                 json=build_request(poly, index),
+#                 headers={"Authorization": f"Bearer {token}", "Accept": "image/png"},
+#             )
+#             r.raise_for_status()
+#             return r.content
+#     except httpx.HTTPStatusError as exc:
+#         logger.error("Sentinel Hub %s: %s", exc.response.status_code, exc.response.text[:500])
+#         raise HTTPException(502, "Satellite service returned an error.") from exc
+#     except httpx.HTTPError as exc:
+#         logger.exception("Sentinel Hub unreachable")
+#         raise HTTPException(502, "Satellite service is unreachable.") from exc
+
+CRS84 = "http://www.opengis.net/def/crs/OGC/1.3/CRS84"
+
+
+async def _call(path: str, payload: dict, accept: str) -> httpx.Response:
+    """POST to Sentinel Hub with a valid token. Turns failures into clean 502s."""
     if not settings.SH_CLIENT_ID:
         raise HTTPException(503, "Satellite service is not configured.")
     try:
         async with httpx.AsyncClient(timeout=60) as client:
             token = await _get_token(client)
             r = await client.post(
-                f"{settings.SH_BASE_URL}/api/v1/process",
-                json=build_request(poly, index),
-                headers={"Authorization": f"Bearer {token}", "Accept": "image/png"},
+                f"{settings.SH_BASE_URL}{path}",
+                json=payload,
+                headers={"Authorization": f"Bearer {token}", "Accept": accept},
             )
             r.raise_for_status()
-            return r.content
+            return r
     except httpx.HTTPStatusError as exc:
         logger.error("Sentinel Hub %s: %s", exc.response.status_code, exc.response.text[:500])
         raise HTTPException(502, "Satellite service returned an error.") from exc
     except httpx.HTTPError as exc:
         logger.exception("Sentinel Hub unreachable")
         raise HTTPException(502, "Satellite service is unreachable.") from exc
+
+
+async def fetch_index_png(poly: Polygon, index: str) -> bytes:
+    """PNG of `index` over the polygon, from the least cloudy image of the last 30 days."""
+    r = await _call("/api/v1/process", build_request(poly, index), "image/png")
+    return r.content
+
+
+# ---------------------------------------------------------------- statistics
+
+def stats_evalscript() -> str:
+    """All 6 indices in ONE request; cloudy pixels are masked out."""
+    outputs = ", ".join(
+        f'{{ id: "{name.lower()}", bands: 1, sampleType: "FLOAT32" }}' for name in FORMULAS
+    )
+    values = "\n".join(
+        f"    {name.lower()}: [{formula}]," for name, (_, formula) in FORMULAS.items()
+    )
+    return f"""//VERSION=3
+function setup() {{
+  return {{
+    input: [{{ bands: ["B04", "B05", "B08", "B11", "SCL", "dataMask"] }}],
+    output: [{outputs}, {{ id: "dataMask", bands: 1 }}]
+  }};
+}}
+// SCL = Sentinel-2's own pixel classification. Ignore: 3 cloud shadow, 8/9 cloud, 10 cirrus.
+const CLOUDY = [3, 8, 9, 10];
+function evaluatePixel(s) {{
+  const clear = CLOUDY.includes(s.SCL) ? 0 : 1;
+  return {{
+{values}
+    dataMask: [s.dataMask * clear]
+  }};
+}}"""
+
+
+def build_stats_request(poly: Polygon, days: int = 30) -> dict:
+    # 10 m pixels expressed in degrees (1° latitude ≈ 111.32 km; longitude shrinks by cos(lat))
+    res_lat = 10 / 111_320
+    res_lng = res_lat / math.cos(math.radians(poly.centroid.y))
+    today = date.today()
+    return {
+        "input": {
+            "bounds": {"geometry": mapping(poly), "properties": {"crs": CRS84}},
+            "data": [{"type": "sentinel-2-l2a", "dataFilter": {"maxCloudCoverage": 50}}],
+        },
+        "aggregation": {
+            "timeRange": {
+                "from": f"{today - timedelta(days=days)}T00:00:00Z",
+                "to": f"{today}T23:59:59Z",
+            },
+            "aggregationInterval": {"of": "P1D"},  # one result per day the satellite passed
+            "evalscript": stats_evalscript(),
+            "resx": res_lng,
+            "resy": res_lat,
+        },
+    }
+
+
+def latest_clear_stats(body: dict, min_clear: float = 0.5) -> dict | None:
+    """Newest satellite pass where at least half the farm's pixels were cloud-free."""
+    for item in sorted(body.get("data", []), key=lambda d: d["interval"]["from"], reverse=True):
+        outputs = item["outputs"]
+        first = outputs["ndvi"]["bands"]["B0"]["stats"]
+        total, missing = first["sampleCount"], first["noDataCount"]
+        if total == 0 or (total - missing) / total < min_clear:
+            continue  # too cloudy that day
+        return {
+            "date": item["interval"]["from"][:10],
+            "clear_pct": round(100 * (total - missing) / total),
+            "indices": {
+                name: round(outputs[name.lower()]["bands"]["B0"]["stats"]["mean"], 3)
+                for name in FORMULAS
+            },
+        }
+    return None
+
+
+async def fetch_index_stats(poly: Polygon, days: int = 30) -> dict | None:
+    r = await _call("/api/v1/statistics", build_stats_request(poly, days), "application/json")
+    return latest_clear_stats(r.json())
