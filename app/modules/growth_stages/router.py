@@ -29,8 +29,6 @@ async def replace_stage(stage_id: int, data: StageIn, admin: AdminUser, db: DB):
 async def delete_stage(stage_id: int, admin: AdminUser, db: DB) -> None:
     await service.delete_stage(db, stage_id)
 
-
-
 @router.post("/import/")
 async def import_stages(admin: AdminUser, db: DB, crop_id: int = Form(...), file: UploadFile = File(...),):
     content = await file.read(MAX_IMPORT_BYTES + 1)

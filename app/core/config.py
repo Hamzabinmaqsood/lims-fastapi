@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     CLOUDINARY_CLOUD_NAME: str = ""
     CLOUDINARY_API_KEY: str = ""
     CLOUDINARY_API_SECRET: str = ""
+    SH_CLIENT_ID: str = ""
+    SH_CLIENT_SECRET: str = ""
+    SH_BASE_URL: str = "https://services.sentinel-hub.com"
+    SH_TOKEN_URL: str = "https://services.sentinel-hub.com/auth/realms/main/protocol/openid-connect/token"
 
     @field_validator("DATABASE_URL")
     @classmethod
