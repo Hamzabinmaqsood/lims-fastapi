@@ -100,3 +100,12 @@ async def import_stages(db: AsyncSession, crop_id: int, content: bytes, filename
         ))
     await db.commit()
     return {"crop_id": crop_id, "imported": len(stages)}
+
+
+async def stage_for_day(db: AsyncSession, crop_id: int, day: int) -> GrowthStage | None:
+    q = select(GrowthStage).where(
+        GrowthStage.crop_id == crop_id,
+        GrowthStage.day_from <= day,
+        GrowthStage.day_to >= day,
+    )
+    return await db.scalar(q)

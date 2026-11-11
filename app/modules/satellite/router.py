@@ -24,3 +24,6 @@ async def farm_index_image(farm_id: int, index: IndexName, user: CurrentUser, db
     png = await service.farm_index_png(db, user, farm_id, index)
     return Response(png, media_type="image/png")
 
+@router.get("/{farm_id}/health/")
+async def farm_health(farm_id: int, user: CurrentUser, db: DB):
+    return await service.farm_health(db, user, farm_id)
