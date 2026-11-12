@@ -88,8 +88,11 @@ def build_request(poly: Polygon, index: str, days: int = 30) -> dict:
     return {
         "input": {
             "bounds": {
-                "geometry": mapping(poly),  # GeoJSON, (lng, lat) order
-                "properties": {"crs": "CRS84"},
+                # Bounding box, not the polygon: Sentinel Hub's Process API currently
+                # crashes on polygon geometry (HV000028, Nov 2026). The Statistical API
+                # still gets the exact polygon.
+                "bbox": list(poly.bounds),  # [min_lng, min_lat, max_lng, max_lat]
+                "properties": {"crs": CRS84},
             },
             "data": [{
                 "type": "sentinel-2-l2a",
@@ -112,27 +115,6 @@ def build_request(poly: Polygon, index: str, days: int = 30) -> dict:
     }
 
 
-# async def fetch_index_png(poly: Polygon, index: str) -> bytes:
-#     """PNG of `index` over the polygon, from the least cloudy image of the last 30 days."""
-#     if not settings.SH_CLIENT_ID:
-#         raise HTTPException(503, "Satellite service is not configured.")
-#     try:
-#         async with httpx.AsyncClient(timeout=60) as client:
-#             token = await _get_token(client)
-#             r = await client.post(
-#                 f"{settings.SH_BASE_URL}/api/v1/process",
-#                 json=build_request(poly, index),
-#                 headers={"Authorization": f"Bearer {token}", "Accept": "image/png"},
-#             )
-#             r.raise_for_status()
-#             return r.content
-#     except httpx.HTTPStatusError as exc:
-#         logger.error("Sentinel Hub %s: %s", exc.response.status_code, exc.response.text[:500])
-#         raise HTTPException(502, "Satellite service returned an error.") from exc
-#     except httpx.HTTPError as exc:
-#         logger.exception("Sentinel Hub unreachable")
-#         raise HTTPException(502, "Satellite service is unreachable.") from exc
-
 CRS84 = "http://www.opengis.net/def/crs/OGC/1.3/CRS84"
 
 
@@ -143,11 +125,15 @@ async def _call(path: str, payload: dict, accept: str) -> httpx.Response:
     try:
         async with httpx.AsyncClient(timeout=60) as client:
             token = await _get_token(client)
-            r = await client.post(
-                f"{settings.SH_BASE_URL}{path}",
-                json=payload,
-                headers={"Authorization": f"Bearer {token}", "Accept": accept},
-            )
+            for attempt in range(2):  # one retry: a 5xx is often temporary
+                r = await client.post(
+                    f"{settings.SH_BASE_URL}{path}",
+                    json=payload,
+                    headers={"Authorization": f"Bearer {token}", "Accept": accept},
+                )
+                if r.status_code < 500 or attempt == 1:
+                    break
+                await asyncio.sleep(1)
             r.raise_for_status()
             return r
     except httpx.HTTPStatusError as exc:

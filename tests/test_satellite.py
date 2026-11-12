@@ -3,6 +3,7 @@ from shapely.geometry import Polygon
 from app.integrations import sentinel
 from tests.test_farms import SQUARE, login_as
 
+ZONES = {"NDVI": [("RED", -1.0), ("YELLOW", 0.4), ("LIGHT_GREEN", 0.65), ("GREEN", 0.8)]}
 FAKE_PNG = b"\x89PNG\r\n\x1a\nfake"
 
 
@@ -40,13 +41,12 @@ async def test_unknown_index_422(client):
 def test_request_uses_lng_lat_and_keeps_shape():
     poly = Polygon([(74.35, 31.52), (74.351, 31.52), (74.351, 31.521), (74.35, 31.521)])
     req = sentinel.build_request(poly, "NDMI")
-    first_point = req["input"]["bounds"]["geometry"]["coordinates"][0][0]
-    assert first_point == (74.35, 31.52)  # GeoJSON is (lng, lat)
+    assert req["input"]["bounds"]["bbox"] == [74.35, 31.52, 74.351, 31.521]  # lng/lat order
     w, h = req["output"]["width"], req["output"]["height"]
     assert w < h  # ~0.001° wide is fewer metres than ~0.001° tall at lat 31.5
     assert "s.B11" in req["evalscript"]  # NDMI uses the SWIR band
 
-ZONES = {"NDVI": [("RED", -1.0), ("YELLOW", 0.4), ("LIGHT_GREEN", 0.65), ("GREEN", 0.8)]}
+
 
 
 def stats_item(day: str, missing: int, ndvi: float, counts=(10, 20, 30, 40)) -> dict:
