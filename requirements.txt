@@ -5,6 +5,7 @@ anyio==4.15.1
 asyncpg==0.32.0
 bcrypt==5.0.0
 certifi==2026.10.23
+charset-normalizer==3.5.2
 click==8.5.0
 cloudinary==1.46.3
 dnspython==2.9.0
@@ -25,6 +26,7 @@ numpy==2.5.4
 openpyxl==3.1.5
 opentelemetry-api==1.45.1
 packaging==26.3
+pillow==13.0.0
 pluggy==1.7.0
 pydantic==2.14.1
 pydantic-settings==2.16.1
@@ -36,6 +38,7 @@ pytest-asyncio==1.4.1
 python-dotenv==1.2.4
 python-multipart==0.0.32
 PyYAML==6.0.3
+reportlab==5.1.0
 shapely==2.2.0
 six==1.17.0
 SQLAlchemy==2.1.6
