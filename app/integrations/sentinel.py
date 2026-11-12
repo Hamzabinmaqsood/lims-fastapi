@@ -20,12 +20,12 @@ logger = logging.getLogger(__name__)
 # index → (bands it needs, formula in JavaScript; `s` is one pixel's band values)
 FORMULAS: dict[str, tuple[list[str], str]] = {
     "NDVI": (["B04", "B08"], "(s.B08 - s.B04) / (s.B08 + s.B04)"),
-    "SAVI": (["B04", "B08"], "1.5 * (s.B08 - s.B04) / (s.B08 + s.B04 + 0.5)"),
+    "SAVI": (["B04", "B08"], "1.428 * (s.B08 - s.B04) / (s.B08 + s.B04 + 0.428)"),
     "MSAVI": (["B04", "B08"],
               "(2 * s.B08 + 1 - Math.sqrt(Math.pow(2 * s.B08 + 1, 2) - 8 * (s.B08 - s.B04))) / 2"),
     "NDMI": (["B08", "B11"], "(s.B08 - s.B11) / (s.B08 + s.B11)"),
     "NDRE": (["B05", "B08"], "(s.B08 - s.B05) / (s.B08 + s.B05)"),
-    "RECI": (["B05", "B08"], "s.B08 / s.B05 - 1"),
+    "RECI": (["B04", "B05"], "s.B05 / s.B04 - 1"),
 }
 
 
@@ -192,7 +192,7 @@ function evaluatePixel(s) {{
 }}"""
 
 
-def build_stats_request(poly: Polygon, days: int = 30) -> dict:
+def build_stats_request(poly: Polygon, zones: dict, days: int = 30) -> dict:
     # 10 m pixels expressed in degrees (1° latitude ≈ 111.32 km; longitude shrinks by cos(lat))
     res_lat = 10 / 111_320
     res_lng = res_lat / math.cos(math.radians(poly.centroid.y))
@@ -207,6 +207,11 @@ def build_stats_request(poly: Polygon, days: int = 30) -> dict:
                 "from": f"{today - timedelta(days=days)}T00:00:00Z",
                 "to": f"{today}T23:59:59Z",
             },
+            "calculations": {
+            name.lower(): {"histograms": {"default": {"bins": zone_edges(zones[name])}}}
+            for name in FORMULAS
+            if name in zones
+        },
             "aggregationInterval": {"of": "P1D"},  # one result per day the satellite passed
             "evalscript": stats_evalscript(),
             "resx": res_lng,
@@ -215,7 +220,7 @@ def build_stats_request(poly: Polygon, days: int = 30) -> dict:
     }
 
 
-def latest_clear_stats(body: dict, min_clear: float = 0.5) -> dict | None:
+def latest_clear_stats(body: dict, zones: dict, min_clear: float = 0.5) -> dict | None:
     """Newest satellite pass where at least half the farm's pixels were cloud-free."""
     for item in sorted(body.get("data", []), key=lambda d: d["interval"]["from"], reverse=True):
         outputs = item["outputs"]
@@ -223,6 +228,18 @@ def latest_clear_stats(body: dict, min_clear: float = 0.5) -> dict | None:
         total, missing = first["sampleCount"], first["noDataCount"]
         if total == 0 or (total - missing) / total < min_clear:
             continue  # too cloudy that day
+
+        zone_pct = {}
+        for name, zone_list in zones.items():
+            bins = outputs[name.lower()]["bands"]["B0"].get("histogram", {}).get("bins", [])
+            counts = [b["count"] for b in bins]
+            valid = sum(counts)
+            if valid and len(counts) == len(zone_list):
+                zone_pct[name] = {
+                    color: round(100 * count / valid, 1)
+                    for (color, _), count in zip(zone_list, counts)
+                }
+
         return {
             "date": item["interval"]["from"][:10],
             "clear_pct": round(100 * (total - missing) / total),
@@ -230,10 +247,17 @@ def latest_clear_stats(body: dict, min_clear: float = 0.5) -> dict | None:
                 name: round(outputs[name.lower()]["bands"]["B0"]["stats"]["mean"], 3)
                 for name in FORMULAS
             },
+            "zones": zone_pct,
         }
     return None
 
 
-async def fetch_index_stats(poly: Polygon, days: int = 30) -> dict | None:
-    r = await _call("/api/v1/statistics", build_stats_request(poly, days), "application/json")
-    return latest_clear_stats(r.json())
+async def fetch_index_stats(poly: Polygon, zones: dict, days: int = 30) -> dict | None:
+    r = await _call("/api/v1/statistics", build_stats_request(poly, zones, days), "application/json")
+    return latest_clear_stats(r.json(), zones)
+
+
+def zone_edges(zone_list: list[tuple[str, float]]) -> list[float]:
+    """[("RED",-1),("YELLOW",0.4),("LIGHT_GREEN",0.65),("GREEN",0.8)] → [-1000, 0.4, 0.65, 0.8, 1000].
+    Wide outer edges so no pixel ever falls outside a bin."""
+    return [-1000.0] + [value for _, value in zone_list[1:]] + [1000.0]

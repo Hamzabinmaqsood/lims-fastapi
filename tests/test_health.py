@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from sqlalchemy import text
 
 from app.integrations import sentinel
-from app.modules.satellite.health import assess
+from app.modules.satellite.health import assess, add_zones
 from tests.conftest import engine
 from tests.test_farms import SQUARE, login_as
 
@@ -43,8 +43,8 @@ async def seed_stage():
 async def test_health_endpoint(client, monkeypatch):
     await seed_stage()
 
-    async def fake_stats(poly, days=30):
-        return {"date": "2026-11-10", "clear_pct": 100, "indices": {"NDVI": 0.20, "NDMI": 0.1}}
+    async def fake_stats(poly, zones, days=30):
+        return {"date": "2026-11-10", "clear_pct": 100, "indices": {"NDVI": 0.20, "NDMI": 0.1}, "zones": {"NDVI": {"RED": 70.0, "YELLOW": 20.0, "LIGHT_GREEN": 10.0, "GREEN": 0.0}}}
 
     monkeypatch.setattr(sentinel, "fetch_index_stats", fake_stats)
     h = await login_as(client, "03001111111")
@@ -60,12 +60,14 @@ async def test_health_endpoint(client, monkeypatch):
     assert body["stage"]["name"] == "Vegetative"
     status = {i["index"]: i["status"] for i in body["indices"]}
     assert status == {"NDVI": "low", "NDMI": "no_reference"}
+    ndvi = next(i for i in body["indices"] if i["index"] == "NDVI")
+    assert ndvi["dominant_color"] == "RED"
 
 
 async def test_health_needs_crop_and_sowing_date(client, monkeypatch):
     called = False
 
-    async def fake_stats(poly, days=30):
+    async def fake_stats(poly, zones, days=30):
         nonlocal called
         called = True
 
@@ -75,3 +77,11 @@ async def test_health_needs_crop_and_sowing_date(client, monkeypatch):
     r = await client.get(f"/api/farms/{farm['id']}/health/", headers=h)
     assert r.status_code == 400
     assert called is False  # fail fast: no satellite call was made
+
+
+
+def test_add_zones_picks_dominant():
+    result = add_zones([{"index": "NDVI"}, {"index": "SAVI"}],
+                       {"NDVI": {"RED": 10.0, "GREEN": 70.0}})
+    assert result[0]["dominant_color"] == "GREEN"
+    assert result[1]["dominant_color"] is None  # no zones configured

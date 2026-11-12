@@ -46,8 +46,15 @@ def test_request_uses_lng_lat_and_keeps_shape():
     assert w < h  # ~0.001° wide is fewer metres than ~0.001° tall at lat 31.5
     assert "s.B11" in req["evalscript"]  # NDMI uses the SWIR band
 
-def stats_item(day: str, missing: int, ndvi: float) -> dict:
-    band = lambda mean: {"bands": {"B0": {"stats": {"mean": mean, "sampleCount": 100, "noDataCount": missing}}}}
+ZONES = {"NDVI": [("RED", -1.0), ("YELLOW", 0.4), ("LIGHT_GREEN", 0.65), ("GREEN", 0.8)]}
+
+
+def stats_item(day: str, missing: int, ndvi: float, counts=(10, 20, 30, 40)) -> dict:
+    def band(mean):
+        return {"bands": {"B0": {
+            "stats": {"mean": mean, "sampleCount": 100, "noDataCount": missing},
+            "histogram": {"bins": [{"count": c} for c in counts]},
+        }}}
     return {
         "interval": {"from": f"{day}T00:00:00Z", "to": f"{day}T23:59:59Z"},
         "outputs": {name.lower(): band(ndvi) for name in sentinel.FORMULAS},
@@ -56,17 +63,17 @@ def stats_item(day: str, missing: int, ndvi: float) -> dict:
 
 def test_latest_clear_stats_skips_cloudy_days():
     body = {"data": [
-        stats_item("2026-11-01", missing=0, ndvi=0.41),   # clear, older
-        stats_item("2026-11-06", missing=90, ndvi=0.05),  # newest but 90% cloud → skipped
+        stats_item("2026-11-01", missing=0, ndvi=0.41),
+        stats_item("2026-11-06", missing=90, ndvi=0.05),
     ]}
-    result = sentinel.latest_clear_stats(body)
+    result = sentinel.latest_clear_stats(body, ZONES)
     assert result["date"] == "2026-11-01"
     assert result["indices"]["NDVI"] == 0.41
-    assert result["clear_pct"] == 100
+    assert result["zones"]["NDVI"] == {"RED": 10.0, "YELLOW": 20.0, "LIGHT_GREEN": 30.0, "GREEN": 40.0}
 
 
 def test_all_cloudy_returns_none():
-    assert sentinel.latest_clear_stats({"data": [stats_item("2026-11-06", 80, 0.1)]}) is None
+    assert sentinel.latest_clear_stats({"data": [stats_item("2026-11-06", 80, 0.1)]}, ZONES) is None
 
 
 def test_stats_evalscript_has_all_indices():
@@ -77,8 +84,8 @@ def test_stats_evalscript_has_all_indices():
 
 
 async def test_stats_endpoint(client, monkeypatch):
-    async def fake_stats(poly, days=30):
-        return {"date": "2026-11-06", "clear_pct": 95, "indices": {"NDVI": 0.52}}
+    async def fake_stats(poly, zones, days=30):
+        return {"date": "2026-11-06", "clear_pct": 95, "indices": {"NDVI": 0.52}, "zones": {}}
 
     monkeypatch.setattr(sentinel, "fetch_index_stats", fake_stats)
     h, farm_id = await make_farm(client)
@@ -94,3 +101,6 @@ async def test_stats_no_clear_image_404(client, monkeypatch):
     monkeypatch.setattr(sentinel, "fetch_index_stats", fake_stats)
     h, farm_id = await make_farm(client)
     assert (await client.get(f"/api/farms/{farm_id}/satellite/stats/", headers=h)).status_code == 404
+
+def test_zone_edges():
+    assert sentinel.zone_edges(ZONES["NDVI"]) == [-1000.0, 0.4, 0.65, 0.8, 1000.0]

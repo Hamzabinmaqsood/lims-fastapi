@@ -8,7 +8,9 @@ from app.modules.users.models import User
 
 from datetime import date
 from app.modules.growth_stages.service import stage_for_day
-from app.modules.satellite.health import assess
+
+from app.modules.report_content.service import load_zones
+from app.modules.satellite.health import add_zones, assess
 
 async def farm_index_png(db: AsyncSession, user: User, farm_id: int, index: str) -> bytes:
     farm = await get_farm(db, user, farm_id)  # 404 if not the owner's farm
@@ -16,7 +18,8 @@ async def farm_index_png(db: AsyncSession, user: User, farm_id: int, index: str)
 
 async def farm_index_stats(db: AsyncSession, user: User, farm_id: int) -> dict:
     farm = await get_farm(db, user, farm_id)
-    stats = await sentinel.fetch_index_stats(to_shape(farm.boundary))
+    zones = await load_zones(db)
+    stats = await sentinel.fetch_index_stats(to_shape(farm.boundary), zones)
     if stats is None:
         raise HTTPException(404, "No cloud-free satellite image in the last 30 days.")
     return stats
@@ -33,7 +36,8 @@ async def farm_health(db: AsyncSession, user: User, farm_id: int) -> dict:
         raise HTTPException(400, "Sowing date is in the future.")
     stage = await stage_for_day(db, farm.crop_id, days)
 
-    stats = await sentinel.fetch_index_stats(to_shape(farm.boundary))
+    zones = await load_zones(db)
+    stats = await sentinel.fetch_index_stats(to_shape(farm.boundary), zones)
     if stats is None:
         raise HTTPException(404, "No cloud-free satellite image in the last 30 days.")
 
@@ -44,5 +48,7 @@ async def farm_health(db: AsyncSession, user: User, farm_id: int) -> dict:
             {"name": stage.name, "day_from": stage.day_from, "day_to": stage.day_to},
         "satellite_date": stats["date"],
         "clear_pct": stats["clear_pct"],
-        "indices": assess(stats["indices"], stage.ranges if stage else []),
+        "indices": add_zones(assess(stats["indices"], stage.ranges if stage else []), stats["zones"]),
     }
+
+
