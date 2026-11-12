@@ -9,8 +9,12 @@ from app.modules.users.models import User
 from datetime import date
 from app.modules.growth_stages.service import stage_for_day
 
-from app.modules.report_content.service import load_zones
 from app.modules.satellite.health import add_zones, assess
+
+from app.core.time import today_pk
+
+from app.modules.report_content.render import attach_texts
+from app.modules.report_content.service import load_texts, load_zones
 
 async def farm_index_png(db: AsyncSession, user: User, farm_id: int, index: str) -> bytes:
     farm = await get_farm(db, user, farm_id)  # 404 if not the owner's farm
@@ -31,7 +35,7 @@ async def farm_health(db: AsyncSession, user: User, farm_id: int) -> dict:
     # Cheap checks FIRST, before the slow, paid satellite call.
     if farm.crop_id is None or farm.sowing_date is None:
         raise HTTPException(400, "Set the farm's crop and sowing date first.")
-    days = (date.today() - farm.sowing_date).days
+    days = (today_pk() - farm.sowing_date).days
     if days < 0:
         raise HTTPException(400, "Sowing date is in the future.")
     stage = await stage_for_day(db, farm.crop_id, days)
@@ -48,7 +52,7 @@ async def farm_health(db: AsyncSession, user: User, farm_id: int) -> dict:
             {"name": stage.name, "day_from": stage.day_from, "day_to": stage.day_to},
         "satellite_date": stats["date"],
         "clear_pct": stats["clear_pct"],
-        "indices": add_zones(assess(stats["indices"], stage.ranges if stage else []), stats["zones"]),
+        "indices": attach_texts(add_zones(assess(stats["indices"], stage.ranges if stage else []), stats["zones"]),*await load_texts(db),),
     }
 
 

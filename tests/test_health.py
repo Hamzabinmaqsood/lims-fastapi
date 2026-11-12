@@ -8,6 +8,7 @@ from app.modules.satellite.health import assess, add_zones
 from tests.conftest import engine
 from tests.test_farms import SQUARE, login_as
 
+from app.core.time import today_pk
 
 def rng(index, low, high):
     return SimpleNamespace(index_name=index, low=low, high=high, title="t", description="d")
@@ -48,7 +49,7 @@ async def test_health_endpoint(client, monkeypatch):
 
     monkeypatch.setattr(sentinel, "fetch_index_stats", fake_stats)
     h = await login_as(client, "03001111111")
-    sown = (date.today() - timedelta(days=40)).isoformat()
+    sown = (today_pk() - timedelta(days=40)).isoformat()
     farm = (await client.post("/api/farms/", headers=h, json={
         "name": "Cotton field", "boundary": SQUARE, "crop_id": 1, "sowing_date": sown,
     })).json()

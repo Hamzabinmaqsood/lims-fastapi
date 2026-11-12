@@ -78,3 +78,9 @@ async def test_missing_name_is_422(client):
     h = await login_as(client, "03001111111")
     r = await client.post("/api/farms/", headers=h, json={"boundary": SQUARE})
     assert r.status_code == 422
+
+async def test_tiny_farm_400(client):
+    h = await login_as(client, "03001111111")
+    tiny = [[33.682333, 73.152508], [33.682336, 73.152552], [33.682308, 73.152499]]
+    r = await client.post("/api/farms/", headers=h, json={"name": "Tiny", "boundary": tiny})
+    assert r.status_code == 400

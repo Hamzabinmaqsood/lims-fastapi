@@ -4,6 +4,9 @@ from pydantic import StringConstraints
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from pydantic import field_validator
+from app.core.time import today_pk
+
 Lat = Annotated[float, Field(ge=-90, le=90)]
 Lng = Annotated[float, Field(ge=-180, le=180)]
 LatLng = tuple[Lat, Lng]  # JSON: [31.52, 74.35]
@@ -18,6 +21,13 @@ class FarmIn(BaseModel):
     district_id: int | None = None
     sowing_date: date | None = None
 
+    @field_validator("sowing_date")
+    @classmethod
+    def not_in_future(cls, value):
+        if value is not None and value > today_pk():
+            raise ValueError("Sowing date cannot be in the future.")
+        return value
+
 
 class FarmUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -28,6 +38,13 @@ class FarmUpdate(BaseModel):
     crop_id: int | None = None
     district_id: int | None = None
     sowing_date: date | None = None
+
+    @field_validator("sowing_date")
+    @classmethod
+    def not_in_future(cls, value):
+        if value is not None and value > today_pk():
+            raise ValueError("Sowing date cannot be in the future.")
+        return value
 
 
 class FarmOut(BaseModel):

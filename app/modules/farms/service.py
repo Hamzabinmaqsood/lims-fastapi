@@ -12,8 +12,14 @@ from app.modules.farms.schemas import FarmIn, FarmUpdate
 from app.modules.locations.models import District
 from app.modules.users.models import User
 
-SQ_METERS_PER_ACRE = Decimal("4046.8564224")
 
+
+SQ_METERS_PER_ACRE = Decimal("4046.8564224")
+MIN_ACRES = Decimal("0.10")
+
+def check_min_area(acres: Decimal) -> None:
+    if acres < MIN_ACRES:
+        raise HTTPException(400, {"boundary": [f"Farm is too small ({acres} acres). Minimum is {MIN_ACRES} acres."]})
 
 # ---------------------------------------------------------------- geometry
 
@@ -70,11 +76,13 @@ async def create_farm(db: AsyncSession, user: User, data: FarmIn) -> Farm:
     poly = build_polygon(data.boundary)
     await validate_refs(db, data.district_id, data.crop_season_id, data.crop_id)
 
+    acres = await calc_acres(db, poly)
+    check_min_area(acres)
     farm = Farm(
         owner_id=user.id,
         name=data.name,
         boundary=from_shape(poly, srid=4326),
-        area_acres=await calc_acres(db, poly),
+        area_acres=acres,
         crop_season_id=data.crop_season_id,
         crop_id=data.crop_id,
         district_id=data.district_id,
@@ -106,7 +114,9 @@ async def update_farm(db: AsyncSession, user: User, farm_id: int, data: FarmUpda
     if "boundary" in changes:
         poly = build_polygon(changes.pop("boundary"))
         farm.boundary = from_shape(poly, srid=4326)
-        farm.area_acres = await calc_acres(db, poly)  # new shape → new area
+        acres = await calc_acres(db, poly)
+        check_min_area(acres)
+        farm.area_acres = acres
 
     await validate_refs(
         db,
