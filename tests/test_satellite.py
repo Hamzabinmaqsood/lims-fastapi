@@ -104,3 +104,8 @@ async def test_stats_no_clear_image_404(client, monkeypatch):
 
 def test_zone_edges():
     assert sentinel.zone_edges(ZONES["NDVI"]) == [-1000.0, 0.4, 0.65, 0.8, 1000.0]
+
+def test_stats_request_asks_for_histograms():
+    poly = Polygon([(74.35, 31.52), (74.351, 31.52), (74.351, 31.521), (74.35, 31.521)])
+    req = sentinel.build_stats_request(poly, ZONES)
+    assert req["calculations"]["ndvi"]["histograms"]["default"]["bins"] == [-1000.0, 0.4, 0.65, 0.8, 1000.0]

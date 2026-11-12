@@ -207,15 +207,15 @@ def build_stats_request(poly: Polygon, zones: dict, days: int = 30) -> dict:
                 "from": f"{today - timedelta(days=days)}T00:00:00Z",
                 "to": f"{today}T23:59:59Z",
             },
-            "calculations": {
-            name.lower(): {"histograms": {"default": {"bins": zone_edges(zones[name])}}}
-            for name in FORMULAS
-            if name in zones
-        },
-            "aggregationInterval": {"of": "P1D"},  # one result per day the satellite passed
+            "aggregationInterval": {"of": "P1D"},
             "evalscript": stats_evalscript(),
             "resx": res_lng,
             "resy": res_lat,
+        },
+        "calculations": {   # ← top level, same level as "input" and "aggregation"
+            name.lower(): {"histograms": {"default": {"bins": zone_edges(zones[name])}}}
+            for name in FORMULAS
+            if name in zones
         },
     }
 
