@@ -1,0 +1,9 @@
+   line-length = 120
+   target-version = "py312"   # check against the Python version Vercel runs
+
+   [lint]
+   select = ["E", "F", "I", "B"]
+   ignore = ["B008"]   # FastAPI uses Depends()/File()/Form() in defaults by design
+
+   [lint.per-file-ignores]
+   "app/db/models.py" = ["F401"]   # these imports only REGISTER models for Alembic
