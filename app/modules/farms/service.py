@@ -12,8 +12,6 @@ from app.modules.farms.schemas import FarmIn, FarmUpdate
 from app.modules.locations.models import District
 from app.modules.users.models import User
 
-
-
 SQ_METERS_PER_ACRE = Decimal("4046.8564224")
 MIN_ACRES = Decimal("0.10")
 

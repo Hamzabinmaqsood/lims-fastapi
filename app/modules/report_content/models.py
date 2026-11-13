@@ -1,10 +1,9 @@
 from decimal import Decimal
 
-from sqlalchemy import CheckConstraint, Numeric, SmallInteger, String, UniqueConstraint,Text
+from sqlalchemy import CheckConstraint, Numeric, SmallInteger, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
-
 
 COLORS = ("RED", "YELLOW", "LIGHT_GREEN", "GREEN")  # worst → best
 

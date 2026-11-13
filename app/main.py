@@ -4,19 +4,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.db.session import get_db
-
 from app.modules.accounts.router import router as accounts_router
-
 from app.modules.auth.router import router as auth_router
-from app.modules.locations.router import router as locations_router
 from app.modules.crops.router import router as crops_router
 from app.modules.farms.router import router as farms_router
 from app.modules.growth_stages.router import router as growth_stages_router
-
-from app.modules.satellite.router import router as satellite_router
+from app.modules.locations.router import router as locations_router
 from app.modules.reports.router import router as reports_router
-
-
+from app.modules.satellite.router import router as satellite_router
 
 app = FastAPI(
     title=settings.PROJECT_NAME,

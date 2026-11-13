@@ -1,13 +1,13 @@
 from fastapi import HTTPException
-from sqlalchemy import select, delete
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from app.modules.crops.models import CropType
+from app.modules.growth_stages.importer import build_stages, read_rows
 from app.modules.growth_stages.models import GrowthStage, IndexRange
 from app.modules.growth_stages.schemas import StageIn
 
-from starlette.concurrency import run_in_threadpool
-from app.modules.growth_stages.importer import build_stages, read_rows
 
 async def list_stages(db: AsyncSession, crop_id: int) -> list[GrowthStage]:
     q = select(GrowthStage).where(GrowthStage.crop_id == crop_id).order_by(GrowthStage.day_from)

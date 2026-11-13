@@ -1,14 +1,12 @@
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import ValidationError
 
-from app.modules.accounts.schemas import DetailsIn
-
+from app.core.deps import CurrentUser
 from app.db.session import DB
 from app.modules.accounts import service
-from app.modules.accounts.schemas import SignupIn, SignupOut
-from app.core.deps import CurrentUser
+
 # from app.modules.accounts.profile import profile_data
-from app.modules.accounts.schemas import ProfileUpdate
+from app.modules.accounts.schemas import DetailsIn, ProfileUpdate, SignupIn, SignupOut
 
 router = APIRouter(prefix="/user", tags=["accounts"])
 

@@ -2,11 +2,10 @@ from datetime import date
 from decimal import Decimal
 
 from geoalchemy2 import Geometry
-from sqlalchemy import BigInteger, Date, ForeignKey, Index, Numeric, SmallInteger, String
+from sqlalchemy import BigInteger, CheckConstraint, Date, ForeignKey, Index, Numeric, SmallInteger, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, CreatedAtMixin, IdMixin
-from sqlalchemy import CheckConstraint 
 
 
 class Farm(IdMixin, CreatedAtMixin, Base):

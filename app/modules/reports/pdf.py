@@ -2,20 +2,16 @@
 
 from io import BytesIO
 
+from PIL import Image as PILImage
+from PIL import ImageDraw
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import cm
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
-
-from reportlab.platypus import KeepTogether
+from reportlab.platypus import Image as RLImage
+from reportlab.platypus import KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from app.core.urdu import urdu_paragraph
-
-from PIL import Image as PILImage
-from PIL import ImageDraw
-from reportlab.platypus import Image as RLImage
-
 
 STATUS_COLORS = {
     "low": colors.HexColor("#d7191c"),

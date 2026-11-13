@@ -1,14 +1,15 @@
 import secrets
 
-from fastapi import HTTPException,UploadFile
+from fastapi import HTTPException, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password
+from app.core.storage import upload_image
 from app.modules.accounts.schemas import ProfileUpdate, SignupIn
 from app.modules.locations.models import District, Locality, Province, Tehsil
 from app.modules.users.models import ROLE_FARMER, Role, User
-from app.core.storage import upload_image
+
 # ---------------------------------------------------------------- reference codes
 
 # No 0/O or 1/I, so codes are easy to read and type.

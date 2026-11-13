@@ -1,5 +1,6 @@
 from datetime import datetime
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, String, Integer, CheckConstraint, text, SmallInteger
+
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Integer, SmallInteger, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, CreatedAtMixin, IdMixin

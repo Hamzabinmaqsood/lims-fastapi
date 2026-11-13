@@ -5,9 +5,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.security import decode_token
 from app.db.session import DB
-from app.modules.users.models import User
-
-from app.modules.users.models import ROLE_SUPER_ADMIN
+from app.modules.users.models import ROLE_SUPER_ADMIN, User
 
 bearer = HTTPBearer(auto_error=False)  # adds the "Authorize" button in Swagger
 

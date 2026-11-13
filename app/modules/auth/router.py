@@ -1,14 +1,11 @@
-from fastapi import APIRouter
-
-from app.db.session import DB
-from app.modules.auth import service
-from app.modules.auth.schemas import LoginIn, LoginOut
-
-from fastapi import HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.core.deps import CurrentUser
 from app.core.security import create_token_pair, decode_token
+from app.db.session import DB
+from app.modules.auth import service
+from app.modules.auth.schemas import LoginIn, LoginOut
 
 router = APIRouter(tags=["auth"])
 

@@ -1,22 +1,20 @@
+from datetime import date
+
 from fastapi import HTTPException
 from geoalchemy2.shape import to_shape
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.integrations import sentinel
-from app.modules.farms.service import get_farm
-from app.modules.users.models import User
-
-from datetime import date
-from app.modules.growth_stages.service import stage_for_day
-
-from app.modules.satellite.health import add_zones, assess
-
 from app.core.time import today_pk
-
+from app.integrations import sentinel
+from app.modules.farms.models import Farm
+from app.modules.farms.service import get_farm
+from app.modules.growth_stages.service import stage_for_day
 from app.modules.report_content.render import attach_texts
 from app.modules.report_content.service import load_texts, load_zones
+from app.modules.satellite.health import add_zones, assess
+from app.modules.satellite.history import add_changes, load_history, save_snapshots
+from app.modules.users.models import User
 
-from app.modules.farms.models import Farm
 
 async def farm_index_png(db: AsyncSession, user: User, farm_id: int, index: str) -> bytes:
     farm = await get_farm(db, user, farm_id)  # 404 if not the owner's farm
@@ -78,7 +76,7 @@ async def farm_health_for(db: AsyncSession, farm: Farm) -> dict:
     if stats is None:
         raise HTTPException(404, "No cloud-free satellite image in the last 30 days.")
 
-    return {
+    result = {
         "farm_id": farm.id,
         "days_since_sowing": days,
         "stage": None if stage is None else
@@ -90,6 +88,13 @@ async def farm_health_for(db: AsyncSession, farm: Farm) -> dict:
             *await load_texts(db),
         ),
     }
+
+    observed_on = date.fromisoformat(stats["date"])
+    history = await load_history(db, farm.id, before=observed_on)  # load BEFORE saving
+    add_changes(result["indices"], history, observed_on)
+    result["history"] = history
+    await save_snapshots(db, farm.id, observed_on, result["indices"])
+    return result
 
 
 async def farm_health(db: AsyncSession, user: User, farm_id: int) -> dict:

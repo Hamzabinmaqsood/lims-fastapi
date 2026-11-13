@@ -1,10 +1,8 @@
 from datetime import date, datetime
 from typing import Annotated
-from pydantic import StringConstraints
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
-from pydantic import field_validator
 from app.core.time import today_pk
 
 Lat = Annotated[float, Field(ge=-90, le=90)]

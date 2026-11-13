@@ -1,7 +1,7 @@
 from decimal import Decimal
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator,StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 StageName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
 
