@@ -247,3 +247,20 @@ def zone_edges(zone_list: list[tuple[str, float]]) -> list[float]:
     """[("RED",-1),("YELLOW",0.4),("LIGHT_GREEN",0.65),("GREEN",0.8)] → [-1000, 0.4, 0.65, 0.8, 1000].
     Wide outer edges so no pixel ever falls outside a bin."""
     return [-1000.0] + [value for _, value in zone_list[1:]] + [1000.0]
+
+
+async def fetch_all_index_pngs(poly: Polygon) -> dict[str, bytes | None]:
+    """All index images at once. A failed image becomes None instead of failing the report."""
+    names = list(FORMULAS)
+    results = await asyncio.gather(
+        *(fetch_index_png(poly, name) for name in names),
+        return_exceptions=True,  # one failure must not cancel the others
+    )
+    images: dict[str, bytes | None] = {}
+    for name, result in zip(names, results):
+        if isinstance(result, Exception):
+            logger.warning("Image for %s failed: %s", name, result)
+            images[name] = None
+        else:
+            images[name] = result
+    return images

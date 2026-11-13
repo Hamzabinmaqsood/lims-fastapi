@@ -12,6 +12,11 @@ from reportlab.platypus import KeepTogether
 
 from app.core.urdu import urdu_paragraph
 
+from PIL import Image as PILImage
+from PIL import ImageDraw
+from reportlab.platypus import Image as RLImage
+
+
 STATUS_COLORS = {
     "low": colors.HexColor("#d7191c"),
     "normal": colors.HexColor("#1a9641"),
@@ -96,6 +101,10 @@ def _index_sections(report: dict, width: float) -> list:
     story = [Spacer(1, 0.7 * cm), Paragraph("Detailed analysis", styles["Heading2"])]
     for i in report["indices"]:
         block = [Paragraph(f"{i['index']} — {i['status'].replace('_', ' ').upper()}", styles["Heading3"])]
+        png = (report.get("images") or {}).get(i["index"])
+        if png:
+            block.append(outlined_image(png, report["farm"]["ring"]))
+            block.append(Spacer(1, 0.2 * cm))
         if i.get("title"):
             block.append(urdu_paragraph(i["title"], width, bold=True))
         if i.get("description"):
@@ -111,3 +120,27 @@ def _index_sections(report: dict, width: float) -> list:
             ]
         story.append(KeepTogether(block))  # don't split one index across two pages
     return story
+
+
+
+def outlined_image(png: bytes, ring: list[list[float]], max_w: float = 8 * cm, max_h: float = 8 * cm) -> RLImage:
+    """Satellite PNG with the farm boundary drawn on top, sized to fit max_w × max_h."""
+    img = PILImage.open(BytesIO(png)).convert("RGBA")
+    w, h = img.size
+
+    # The image covers exactly the farm's bounding box, so lng/lat map straight to pixels.
+    lngs, lats = [p[0] for p in ring], [p[1] for p in ring]
+    min_lng, max_lng, min_lat, max_lat = min(lngs), max(lngs), min(lats), max(lats)
+
+    def to_px(lng: float, lat: float) -> tuple[float, float]:
+        x = (lng - min_lng) / ((max_lng - min_lng) or 1) * (w - 1)
+        y = (max_lat - lat) / ((max_lat - min_lat) or 1) * (h - 1)  # pixel y grows DOWNWARD
+        return x, y
+
+    ImageDraw.Draw(img).line([to_px(lng, lat) for lng, lat in ring], fill=(0, 0, 0, 255), width=3)
+
+    out = BytesIO()
+    img.save(out, "PNG")
+    out.seek(0)
+    scale = min(max_w / w, max_h / h)
+    return RLImage(out, width=w * scale, height=h * scale)

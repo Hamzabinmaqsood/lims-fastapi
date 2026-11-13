@@ -56,3 +56,39 @@ async def farm_health(db: AsyncSession, user: User, farm_id: int) -> dict:
     }
 
 
+def check_ready(farm: Farm) -> int:
+    """Cheap checks; returns the crop's age in days."""
+    if farm.crop_id is None or farm.sowing_date is None:
+        raise HTTPException(400, "Set the farm's crop and sowing date first.")
+    days = (today_pk() - farm.sowing_date).days
+    if days < 0:
+        raise HTTPException(400, "Sowing date is in the future.")
+    return days
+
+
+async def farm_health_for(db: AsyncSession, farm: Farm) -> dict:
+    """Health for an already-loaded (and ownership-checked) farm."""
+    days = check_ready(farm)
+    stage = await stage_for_day(db, farm.crop_id, days)
+
+    zones = await load_zones(db)
+    stats = await sentinel.fetch_index_stats(to_shape(farm.boundary), zones)
+    if stats is None:
+        raise HTTPException(404, "No cloud-free satellite image in the last 30 days.")
+
+    return {
+        "farm_id": farm.id,
+        "days_since_sowing": days,
+        "stage": None if stage is None else
+            {"name": stage.name, "day_from": stage.day_from, "day_to": stage.day_to},
+        "satellite_date": stats["date"],
+        "clear_pct": stats["clear_pct"],
+        "indices": attach_texts(
+            add_zones(assess(stats["indices"], stage.ranges if stage else []), stats["zones"]),
+            *await load_texts(db),
+        ),
+    }
+
+
+async def farm_health(db: AsyncSession, user: User, farm_id: int) -> dict:
+    return await farm_health_for(db, await get_farm(db, user, farm_id))
