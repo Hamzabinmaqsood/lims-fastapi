@@ -8,6 +8,10 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import cm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
+from reportlab.platypus import KeepTogether
+
+from app.core.urdu import urdu_paragraph
+
 STATUS_COLORS = {
     "low": colors.HexColor("#d7191c"),
     "normal": colors.HexColor("#1a9641"),
@@ -81,6 +85,29 @@ def build_pdf(report: dict) -> bytes:
         Spacer(1, 0.7 * cm),
         Paragraph("Satellite index summary", styles["Heading2"]),
         _index_table(report),
+        *_index_sections(report, doc.width),
     ]
     doc.build(story)
     return buffer.getvalue()
+
+
+def _index_sections(report: dict, width: float) -> list:
+    styles = getSampleStyleSheet()
+    story = [Spacer(1, 0.7 * cm), Paragraph("Detailed analysis", styles["Heading2"])]
+    for i in report["indices"]:
+        block = [Paragraph(f"{i['index']} — {i['status'].replace('_', ' ').upper()}", styles["Heading3"])]
+        if i.get("title"):
+            block.append(urdu_paragraph(i["title"], width, bold=True))
+        if i.get("description"):
+            block.append(urdu_paragraph(i["description"], width))
+        if i.get("paragraph"):
+            block.append(urdu_paragraph(i["paragraph"], width))
+        if i.get("guidance"):
+            block += [
+                urdu_paragraph("خصوصی ہدایات", width, bold=True),  # "Special instructions"
+                urdu_paragraph(i["guidance"]["special_instructions"], width),
+                urdu_paragraph("عملی اقدامات", width, bold=True),  # "Practical actions"
+                urdu_paragraph(i["guidance"]["practical_actions"], width),
+            ]
+        story.append(KeepTogether(block))  # don't split one index across two pages
+    return story
