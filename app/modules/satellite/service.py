@@ -16,6 +16,8 @@ from app.core.time import today_pk
 from app.modules.report_content.render import attach_texts
 from app.modules.report_content.service import load_texts, load_zones
 
+from app.modules.farms.models import Farm
+
 async def farm_index_png(db: AsyncSession, user: User, farm_id: int, index: str) -> bytes:
     farm = await get_farm(db, user, farm_id)  # 404 if not the owner's farm
     return await sentinel.fetch_index_png(to_shape(farm.boundary), index)
