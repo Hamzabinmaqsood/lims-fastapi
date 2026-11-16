@@ -6,7 +6,7 @@ from app.modules.report_content.models import ColorZone, GuidanceTemplate, Parag
 Zones = dict[str, list[tuple[str, float]]]  # {"NDVI": [("RED", -1.0), ("YELLOW", 0.4), ...]}
 
 
-async def load_zones(db: AsyncSession) -> Zones:
+async def load_zones(db: AsyncSession) -> Zones: #Loads the colour thresholds (where red, yellow, light green and green start) for each index.
     rows = (await db.scalars(
         select(ColorZone).order_by(ColorZone.index_name, ColorZone.min_value)
     )).all()

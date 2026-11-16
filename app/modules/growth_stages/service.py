@@ -102,7 +102,7 @@ async def import_stages(db: AsyncSession, crop_id: int, content: bytes, filename
     return {"crop_id": crop_id, "imported": len(stages)}
 
 
-async def stage_for_day(db: AsyncSession, crop_id: int, day: int) -> GrowthStage | None:
+async def stage_for_day(db: AsyncSession, crop_id: int, day: int) -> GrowthStage | None:   #Finds the crop’s growth stage for that age, e.g. day 77 → Square Formation.
     q = select(GrowthStage).where(
         GrowthStage.crop_id == crop_id,
         GrowthStage.day_from <= day,

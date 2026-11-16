@@ -12,6 +12,8 @@ from app.modules.growth_stages.router import router as growth_stages_router
 from app.modules.locations.router import router as locations_router
 from app.modules.reports.router import router as reports_router
 from app.modules.satellite.router import router as satellite_router
+from app.modules.queries.router import router as query_router
+
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -29,6 +31,7 @@ app.include_router(farms_router, prefix=settings.API_PREFIX)
 app.include_router(growth_stages_router, prefix=settings.API_PREFIX)
 app.include_router(satellite_router, prefix=settings.API_PREFIX)
 app.include_router(reports_router, prefix=settings.API_PREFIX)
+app.include_router(query_router, prefix=settings.API_PREFIX)
 
 
 @app.get(f"{settings.API_PREFIX}/health/db")

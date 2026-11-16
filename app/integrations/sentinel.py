@@ -28,7 +28,7 @@ FORMULAS: dict[str, tuple[list[str], str]] = {
     "RECI": (["B04", "B05"], "s.B05 / s.B04 - 1"),
 }
 
-
+#Writes the small JavaScript program that runs on Sentinel Hub’s servers to calculate and colour the index for each pixel.
 def evalscript(index: str) -> str:
     """JavaScript that Sentinel Hub runs for every pixel: compute the index, colour it."""
     bands, formula = FORMULAS[index]
@@ -52,7 +52,7 @@ _token_expires_at = 0.0
 _token_lock = asyncio.Lock()
 
 
-async def _get_token(client: httpx.AsyncClient) -> str:
+async def _get_token(client: httpx.AsyncClient) -> str:    #Logs in to Sentinel Hub once and reuses the token until shortly before it expires. A lock makes sure the 6 parallel downloads don’t all log in.
     """Reuse the token until 60 s before it expires (don't log in on every request)."""
     global _token, _token_expires_at
     async with _token_lock:  # two requests at once must not both fetch a token
@@ -72,7 +72,7 @@ async def _get_token(client: httpx.AsyncClient) -> str:
 
 # ---------------------------------------------------------------- request
 
-def image_size(poly: Polygon, longest_side: int = 512) -> tuple[int, int]:
+def image_size(poly: Polygon, longest_side: int = 512) -> tuple[int, int]: #Picks the width and height so the image keeps the farm’s real shape (it isn’t stretched).
     """Width/height that keep the farm's real shape (a degree of longitude shrinks near the poles)."""
     min_lng, min_lat, max_lng, max_lat = poly.bounds
     width_m = (max_lng - min_lng) * math.cos(math.radians((min_lat + max_lat) / 2))
@@ -82,7 +82,7 @@ def image_size(poly: Polygon, longest_side: int = 512) -> tuple[int, int]:
     return max(1, round(longest_side * width_m / height_m)), longest_side
 
 
-def build_request(poly: Polygon, index: str, days: int = 30) -> dict:
+def build_request(poly: Polygon, index: str, days: int = 30) -> dict:    #Builds the request: the farm’s bounding box, the last 30 days, the least cloudy image, and the image size.
     width, height = image_size(poly)
     today = date.today()
     return {
@@ -118,6 +118,7 @@ def build_request(poly: Polygon, index: str, days: int = 30) -> dict:
 CRS84 = "http://www.opengis.net/def/crs/OGC/1.3/CRS84"
 
 
+#Sends the request with a valid token, retries once on server errors, and turns failures into a clean 502.
 async def _call(path: str, payload: dict, accept: str) -> httpx.Response:
     """POST to Sentinel Hub with a valid token. Turns failures into clean 502s."""
     if not settings.SH_CLIENT_ID:
@@ -144,7 +145,7 @@ async def _call(path: str, payload: dict, accept: str) -> httpx.Response:
         raise HTTPException(502, "Satellite service is unreachable.") from exc
 
 
-async def fetch_index_png(poly: Polygon, index: str) -> bytes:
+async def fetch_index_png(poly: Polygon, index: str) -> bytes:     #Downloads one coloured index image (for example NDVI) for the farm.
     """PNG of `index` over the polygon, from the least cloudy image of the last 30 days."""
     r = await _call("/api/v1/process", build_request(poly, index), "image/png")
     return r.content
@@ -152,7 +153,7 @@ async def fetch_index_png(poly: Polygon, index: str) -> bytes:
 
 # ---------------------------------------------------------------- statistics
 
-def stats_evalscript() -> str:
+def stats_evalscript() -> str:    #Writes the script that calculates all 6 indices at once and hides cloudy pixels.
     """All 6 indices in ONE request; cloudy pixels are masked out."""
     outputs = ", ".join(
         f'{{ id: "{name.lower()}", bands: 1, sampleType: "FLOAT32" }}' for name in FORMULAS
@@ -178,7 +179,7 @@ function evaluatePixel(s) {{
 }}"""
 
 
-def build_stats_request(poly: Polygon, zones: dict, days: int = 30) -> dict:
+def build_stats_request(poly: Polygon, zones: dict, days: int = 30) -> dict:  #Builds the statistics request: the exact farm shape, 30 days, one result per satellite pass.
     # 10 m pixels expressed in degrees (1° latitude ≈ 111.32 km; longitude shrinks by cos(lat))
     res_lat = 10 / 111_320
     res_lng = res_lat / math.cos(math.radians(poly.centroid.y))
@@ -206,7 +207,7 @@ def build_stats_request(poly: Polygon, zones: dict, days: int = 30) -> dict:
     }
 
 
-def latest_clear_stats(body: dict, zones: dict, min_clear: float = 0.5) -> dict | None:
+def latest_clear_stats(body: dict, zones: dict, min_clear: float = 0.5) -> dict | None:       #Picks the newest day with at least half the farm cloud-free and extracts its averages and percentages.
     """Newest satellite pass where at least half the farm's pixels were cloud-free."""
     for item in sorted(body.get("data", []), key=lambda d: d["interval"]["from"], reverse=True):
         outputs = item["outputs"]
@@ -238,18 +239,18 @@ def latest_clear_stats(body: dict, zones: dict, min_clear: float = 0.5) -> dict 
     return None
 
 
-async def fetch_index_stats(poly: Polygon, zones: dict, days: int = 30) -> dict | None:
+async def fetch_index_stats(poly: Polygon, zones: dict, days: int = 30) -> dict | None:  #Gets the farm’s average value and colour percentages for each index from the satellite.
     r = await _call("/api/v1/statistics", build_stats_request(poly, zones, days), "application/json")
     return latest_clear_stats(r.json(), zones)
 
 
-def zone_edges(zone_list: list[tuple[str, float]]) -> list[float]:
+def zone_edges(zone_list: list[tuple[str, float]]) -> list[float]:  #Turns the colour thresholds into histogram boundaries, so the satellite counts pixels per colour.
     """[("RED",-1),("YELLOW",0.4),("LIGHT_GREEN",0.65),("GREEN",0.8)] → [-1000, 0.4, 0.65, 0.8, 1000].
     Wide outer edges so no pixel ever falls outside a bin."""
     return [-1000.0] + [value for _, value in zone_list[1:]] + [1000.0]
 
 
-async def fetch_all_index_pngs(poly: Polygon) -> dict[str, bytes | None]:
+async def fetch_all_index_pngs(poly: Polygon) -> dict[str, bytes | None]: #Starts all 6 index downloads at once (asyncio.gather). A failed one becomes None instead of breaking the rest.
     """All index images at once. A failed image becomes None instead of failing the report."""
     names = list(FORMULAS)
     results = await asyncio.gather(

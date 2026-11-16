@@ -12,6 +12,7 @@ router = APIRouter(prefix="/farms", tags=["reports"])
     response_class=Response,
     responses={200: {"content": {"application/pdf": {}}}},
 )
+ #Endpoint: asks for the PDF and returns it as inline or as a download (attachment).
 async def farm_report(farm_id: int, user: CurrentUser, db: DB, download: bool = False):
     pdf = await service.report_pdf(db, user, farm_id)
     disposition = "attachment" if download else "inline"

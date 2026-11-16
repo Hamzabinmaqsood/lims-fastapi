@@ -55,7 +55,7 @@ async def farm_health(db: AsyncSession, user: User, farm_id: int) -> dict:
         "indices": attach_texts(add_zones(assess(stats["indices"], stage.ranges if stage else []), stats["zones"]),*await load_texts(db),),
     }
 
-
+# Cheap checks before any paid call: crop and sowing date set, date not in the future. Returns the crop’s age in days.
 def check_ready(farm: Farm) -> int:
     """Cheap checks; returns the crop's age in days."""
     if farm.crop_id is None or farm.sowing_date is None:
@@ -66,7 +66,7 @@ def check_ready(farm: Farm) -> int:
     return days
 
 
-async def farm_health_for(db: AsyncSession, farm: Farm) -> dict:
+async def farm_health_for(db: AsyncSession, farm: Farm) -> dict:   #Runs the whole health analysis for an already-checked farm and returns the result.
     """Health for an already-loaded (and ownership-checked) farm."""
     days = check_ready(farm)
     stage = await stage_for_day(db, farm.crop_id, days)

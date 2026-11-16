@@ -96,7 +96,7 @@ async def list_farms(db: AsyncSession, user: User) -> list[Farm]:
     q = select(Farm).where(Farm.owner_id == user.id).order_by(Farm.created_at.desc())
     return list((await db.scalars(q)).all())
 
-
+# Loads the farm only if it belongs to this user, otherwise 404.
 async def get_farm(db: AsyncSession, user: User, farm_id: int) -> Farm:
     """Only the owner's farm. Someone else's farm looks exactly like a missing one."""
     farm = await db.scalar(select(Farm).where(Farm.id == farm_id, Farm.owner_id == user.id))

@@ -11,11 +11,11 @@ from app.modules.reports.pdf import build_pdf
 from app.modules.satellite.service import check_ready, farm_health_for
 from app.modules.users.models import User
 
-
+# Gathers everything the PDF needs: farm, health, images, crop name.
 async def report_data(db: AsyncSession, user: User, farm_id: int) -> dict:
     farm = await get_farm(db, user, farm_id)  # ownership check, ONE query
     check_ready(farm)                         # cheap 400s before any satellite call
-    poly = to_shape(farm.boundary)
+    poly = to_shape(farm.boundary)            #Converts the stored PostGIS boundary into a Shapely polygon.
 
     # Start downloading the 6 images in the background...
     images_task = asyncio.create_task(sentinel.fetch_all_index_pngs(poly))
@@ -40,7 +40,7 @@ async def report_data(db: AsyncSession, user: User, farm_id: int) -> dict:
         },
     }
 
-
+# Collects the report data, then builds the PDF in a background thread.
 async def report_pdf(db: AsyncSession, user: User, farm_id: int) -> bytes:
     data = await report_data(db, user, farm_id)
     return await run_in_threadpool(build_pdf, data)
