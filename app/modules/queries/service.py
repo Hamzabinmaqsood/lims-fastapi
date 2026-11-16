@@ -9,6 +9,10 @@ from app.core.storage import upload_media
 from app.modules.queries.models import Query
 from app.modules.users.models import User
 
+from datetime import UTC, datetime
+
+from app.modules.queries.assignment import pick_member
+
 Status = Literal["pending", "answered"]
 
 
@@ -39,6 +43,10 @@ async def create_query(
         voice_url=media.get("voice"),
         video_url=media.get("video"),
     )
+    member_id = await pick_member(db, user.id)
+    if member_id is not None:
+        query.assigned_to_id = member_id
+        query.assigned_at = datetime.now(UTC)
     db.add(query)
     await db.commit()
     await db.refresh(query)

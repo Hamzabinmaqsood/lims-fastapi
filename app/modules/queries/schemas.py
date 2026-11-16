@@ -14,6 +14,7 @@ class QueryOut(BaseModel):
     is_done: bool                 # read from the @property
     created_at: datetime
     answered_at: datetime | None
+    assigned_to_id: int | None
 
 
 class QueryPage(BaseModel):
