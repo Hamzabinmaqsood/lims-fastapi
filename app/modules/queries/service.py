@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.storage import upload_media
 from app.modules.queries.assignment import pick_member
-from app.modules.queries.models import Query, QueryResponse
+from app.modules.queries.models import Query, QueryResponse, QueryVersion, ResponseVersion
 from app.modules.users.models import ROLE_RESPONSE_TEAM, ROLE_SUPER_ADMIN, User
 
 Status = Literal["pending", "answered"]
@@ -68,6 +68,10 @@ def _apply_edits(obj, text: str | None, media: dict[str, str], removes: dict[str
             setattr(obj, f"{kind}_url", None)
 
 
+def _content(obj) -> dict:
+    """The 4 content fields of a query or answer, as a dict."""
+    return {"text": obj.text, "image_url": obj.image_url,
+            "voice_url": obj.voice_url, "video_url": obj.video_url}
 # ---------------------------------------------------------------- asking (Q1 + Q2)
 
 async def create_query(
@@ -93,7 +97,7 @@ async def create_query(
         video_url=media.get("video"),
     )
 
-    member_id = await pick_member(db, user.id)
+    member_id = await pick_member(db)
     if member_id is not None:
         query.assigned_to_id = member_id
         query.assigned_at = datetime.now(UTC)
@@ -121,10 +125,8 @@ async def list_queries(
 ) -> dict:
     """One page of the queries this user may see, newest first."""
     q = _visible_to(user)
-    if status == "pending":
-        q = q.where(Query.answered_at.is_(None))
-    elif status == "answered":
-        q = q.where(Query.answered_at.is_not(None))
+    if status is not None:
+        q = q.where(Query.status == status)
 
     count = await db.scalar(select(func.count()).select_from(q.subquery()))
     rows = await db.scalars(
@@ -192,6 +194,7 @@ async def respond(
     if query.assigned_to_id is None:  # unassigned → the responder takes it
         query.assigned_to_id, query.assigned_at = user.id, now
     query.answered_at = now
+    query.status = "answered"
     response = QueryResponse(
         query_id=query.id,
         responder_id=user.id,
@@ -227,7 +230,10 @@ async def update_query(
     if query.is_done:
         raise HTTPException(400, {"error": "An answered query can't be edited."})
 
+    before = _content(query)
     _apply_edits(query, text, media, removes)
+    if _content(query) != before:                       # only if something really changed
+        db.add(QueryVersion(query_id=query.id, **before))
     await db.commit()
     await db.refresh(query)
     return query
@@ -247,7 +253,11 @@ async def update_response(
         raise HTTPException(400, {"error": "An answer can't be empty."})
 
     media = await _upload(files, f"lims/responses/{response.query_id}")
+    before = _content(response)
     _apply_edits(response, text, media, removes)
+    if _content(response) != before:
+        db.add(ResponseVersion(response_id=response.id, **before))
+        response.status = "edited"
     await db.commit()
     await db.refresh(response)
     return response

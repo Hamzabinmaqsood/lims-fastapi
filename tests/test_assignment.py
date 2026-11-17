@@ -32,22 +32,12 @@ async def test_balanced_picks_least_busy(client):
     assert (await ask(client, f2))["assigned_to_id"] == b   # a has 1 pending, b has 0
 
 
-async def test_sticky_returns_to_same_member(client):
-    a = await make_team_member(client, "03100000001")
-    await make_team_member(client, "03100000002")
-    farmer = await login_as(client, "03001111111")
-    assert (await ask(client, farmer))["assigned_to_id"] == a
-    assert (await ask(client, farmer))["assigned_to_id"] == a   # sticky, even though a is now busier
-
-
-async def test_sticky_skips_deactivated_member(client):
+async def test_same_farmer_goes_to_least_busy_not_previous(client):
     a = await make_team_member(client, "03100000001")
     b = await make_team_member(client, "03100000002")
     farmer = await login_as(client, "03001111111")
-    assert (await ask(client, farmer))["assigned_to_id"] == a
-    async with engine.begin() as conn:
-        await conn.execute(text(f"UPDATE users SET is_active = false WHERE id = {a}"))
-    assert (await ask(client, farmer))["assigned_to_id"] == b
+    assert (await ask(client, farmer))["assigned_to_id"] == a   # tie → lowest id
+    assert (await ask(client, farmer))["assigned_to_id"] == b   # no sticky: b has fewer
 
 
 async def test_answered_queries_do_not_count_as_load(client):
@@ -56,6 +46,6 @@ async def test_answered_queries_do_not_count_as_load(client):
     f1 = await login_as(client, "03001111111")
     await ask(client, f1)  # goes to a
     async with engine.begin() as conn:
-        await conn.execute(text("UPDATE queries SET answered_at = now()"))
+        await conn.execute(text("UPDATE queries SET answered_at = now(), status = 'answered'"))
     f2 = await login_as(client, "03002222222")
     assert (await ask(client, f2))["assigned_to_id"] == a   # a has 0 PENDING → tie → lowest id

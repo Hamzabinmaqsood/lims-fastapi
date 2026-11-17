@@ -12,6 +12,7 @@ class ResponseOut(BaseModel):
     video_url: str | None
     responder_id: int | None
     created_at: datetime
+    status: str
 
 
 class QueryOut(BaseModel):
@@ -27,6 +28,7 @@ class QueryOut(BaseModel):
     answered_at: datetime | None
     assigned_to_id: int | None
     response: ResponseOut | None
+    status: str
 
 
 class QueryPage(BaseModel):
@@ -34,5 +36,3 @@ class QueryPage(BaseModel):
     page: int
     page_size: int
     results: list[QueryOut]
-
-

@@ -38,3 +38,4 @@ app.include_router(query_router, prefix=settings.API_PREFIX)
 async def health_db(db: AsyncSession = Depends(get_db)) -> dict:
     result = await db.execute(text("SELECT version()"))
     return {"database": result.scalar()}
+ 
