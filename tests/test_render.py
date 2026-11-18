@@ -15,6 +15,8 @@ from app.integrations import sentinel
 from app.modules.reports.farm_mask import class_maps, class_percents, farm_mask
 from app.modules.reports.pdf import build_pdf  # noqa: F401  (import check)
 
+from app.modules.reports.farm_mask import class_patches, split_patches
+
 ZONES = [("RED", -1), ("YELLOW", 0.4), ("LIGHT_GREEN", 0.65), ("GREEN", 0.8)]
 
 
@@ -74,3 +76,25 @@ def test_percents_count_only_inside_farm():
     assert class_percents(whole, classes) == {"good": 50.0, "normal": 0.0, "bad": 50.0}
     assert class_percents(right, classes)["bad"] == 0.0           # bad pixels are outside this farm
     assert list(class_maps(Image.new("RGB", (10, 10)), right, classes)) == ["good"]
+
+
+
+
+
+
+def test_separate_patches_become_separate_maps():
+    classes = Image.new("L", (40, 40), 1)            # all good...
+    classes.paste(3, (0, 0, 10, 10))                 # ...bad patch top-left
+    classes.paste(3, (30, 30, 40, 40))               # ...bad patch bottom-right (not touching)
+    mask = farm_mask((40, 40), [(0, 0), (39, 0), (39, 39), (0, 39)])
+    found = class_patches(Image.new("RGB", (40, 40)), mask, classes)
+    assert len(found["bad"]) == 2                    # two separate bad areas
+    assert found["bad"][0]["image"].size[0] < 40     # cropped, not the whole map
+    assert len(found["good"]) == 1                   # the good area is one connected piece
+
+
+def test_corner_touching_blocks_are_one_patch():
+    layer = Image.new("L", (10, 10), 0)
+    layer.paste(255, (0, 0, 3, 3))
+    layer.paste(255, (3, 3, 6, 6))                   # touches only at a corner
+    assert len(split_patches(layer)) == 1

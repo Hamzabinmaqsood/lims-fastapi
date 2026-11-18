@@ -12,7 +12,7 @@ from reportlab.platypus import Image as RLImage
 from reportlab.platypus import KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from app.core.urdu import urdu_paragraph
-from app.modules.reports.farm_mask import class_maps, class_percents, cut_to_farm, farm_mask
+from app.modules.reports.farm_mask import class_patches, cut_to_farm, farm_mask
 
 SUB_LABELS = {"good": "Good", "normal": "Normal", "bad": "Bad"}
 
@@ -154,10 +154,10 @@ def outlined_image(png: bytes, ring: list[list[float]], max_w: float = 8 * cm, m
 
 
 def _submaps_section(report: dict) -> list:
-    """For each index: up to 3 small maps (Good / Normal / Bad), only for classes present in the farm."""
+    """For each index: one small cropped map per separate Good / Normal / Bad patch of the farm."""
     images, class_images = report.get("images") or {}, report.get("class_images") or {}
     if not class_images:
-        return []                                               # no class maps → no section (and no ring needed)
+        return []
     styles = getSampleStyleSheet()
     ring = report["farm"]["ring"]
     blocks = []
@@ -168,20 +168,29 @@ def _submaps_section(report: dict) -> list:
         img = PILImage.open(BytesIO(png))
         classes = PILImage.open(BytesIO(cls_png)).convert("L")
         if classes.size != img.size:
-            continue                                            # should never happen (same request size)
+            continue
         points = _ring_px(ring, *img.size)
-        mask = farm_mask(img.size, points)
-        maps, pct = class_maps(img, mask, classes), class_percents(mask, classes)
-        if not maps:
+        found = class_patches(img, farm_mask(img.size, points), classes)
+        if not found:
             continue                                            # e.g. the whole farm was cloudy
 
+        # Same scale for every patch of this index (like the main map), so sizes are comparable.
+        scale = 8 * cm / max(img.size)
         cells, captions = [], []
-        for name, sub in maps.items():
-            ImageDraw.Draw(sub).line(points, fill=(0, 0, 0), width=2)
-            cells.append(_to_rl(sub, 5 * cm, 5 * cm))
-            captions.append(Paragraph(f"<b>{SUB_LABELS[name]}</b> — {pct[name]:.1f}%", styles["Normal"]))
-        table = Table([cells, captions], colWidths=[5.6 * cm] * len(cells), hAlign="LEFT")
-        table.setStyle(TableStyle([("ALIGN", (0, 0), (-1, -1), "CENTER"), ("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
+        for name, patches in found.items():
+            for n, p in enumerate(patches, start=1):
+                sub, (x0, y0, _, _) = p["image"], p["box"]
+                ImageDraw.Draw(sub).line([(x - x0, y - y0) for x, y in points], fill=(0, 0, 0), width=2)
+                s = min(scale, 5 * cm / sub.width, 5 * cm / sub.height)   # never wider than a column
+                cells.append(_to_rl(sub, sub.width * s, sub.height * s))
+                captions.append(Paragraph(f"<b>{SUB_LABELS[name]} area {n}</b> — {p['pct']:.1f}%", styles["Normal"]))
+
+        rows = []
+        for start in range(0, len(cells), 3):                  # 3 maps per row
+            pad = [""] * (3 - len(cells[start:start + 3]))
+            rows += [cells[start:start + 3] + pad, captions[start:start + 3] + pad]
+        table = Table(rows, colWidths=[5.6 * cm] * 3, hAlign="LEFT")
+        table.setStyle(TableStyle([("ALIGN", (0, 0), (-1, -1), "CENTER"), ("VALIGN", (0, 0), (-1, -1), "BOTTOM")]))
         blocks.append(KeepTogether([Spacer(1, 0.4 * cm), Paragraph(i["index"], styles["Heading3"]), table]))
 
     if not blocks:
