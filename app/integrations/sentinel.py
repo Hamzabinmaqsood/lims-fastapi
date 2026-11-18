@@ -28,7 +28,13 @@ FORMULAS: dict[str, tuple[list[str], str]] = {
     "RECI": (["B04", "B05"], "s.B05 / s.B04 - 1"),
 }
 
-#Writes the small JavaScript program that runs on Sentinel Hub’s servers to calculate and colour the index for each pixel.
+# Zone colour (from load_zones) → sub-map group. Change here if the senior wants other groups.
+ZONE_GROUP = {"GREEN": "good", "LIGHT_GREEN": "good", "DARK_GREEN": "good",
+              "YELLOW": "normal", "ORANGE": "normal", "RED": "bad"}
+GROUP_CODE = {"good": 1, "normal": 2, "bad": 3}   # must match farm_mask.CLASSES
+
+
+#Writes the small JavaScript program that runs on Sentinel Hub's servers to calculate and colour the index for each pixel.
 def evalscript(index: str) -> str:
     """JavaScript that Sentinel Hub runs for every pixel: compute the index, colour it."""
     bands, formula = FORMULAS[index]
@@ -45,6 +51,34 @@ function evaluatePixel(s) {{
 }}"""
 
 
+def _code(color: str) -> int:
+    return GROUP_CODE[ZONE_GROUP.get(color.upper(), "normal")]
+
+
+#Writes the script for the class map: one number per pixel (0 cloud/no data, 1 good, 2 normal, 3 bad), using the SAME zone limits as the percentages.
+def class_evalscript(index: str, zone_list: list[tuple[str, float]]) -> str:
+    bands, formula = FORMULAS[index]
+    zones = sorted(zone_list, key=lambda z: z[1])            # lowest limit first
+    checks = "\n".join(                                        # highest limit checked first
+        f"  if (v >= {minimum}) return [{_code(color)}];" for color, minimum in reversed(zones[1:])
+    )
+    return f"""//VERSION=3
+function setup() {{
+  return {{
+    input: [{{ bands: {json.dumps(bands + ["SCL", "dataMask"])} }}],
+    output: {{ bands: 1, sampleType: "UINT8" }}
+  }};
+}}
+const CLOUDY = [3, 8, 9, 10];
+function evaluatePixel(s) {{
+  if (!s.dataMask || CLOUDY.includes(s.SCL)) return [0];
+  const v = {formula};
+  if (!isFinite(v)) return [0];
+{checks}
+  return [{_code(zones[0][0])}];
+}}"""
+
+
 # ---------------------------------------------------------------- auth
 
 _token: str | None = None
@@ -52,7 +86,7 @@ _token_expires_at = 0.0
 _token_lock = asyncio.Lock()
 
 
-async def _get_token(client: httpx.AsyncClient) -> str:    #Logs in to Sentinel Hub once and reuses the token until shortly before it expires. A lock makes sure the 6 parallel downloads don’t all log in.
+async def _get_token(client: httpx.AsyncClient) -> str:    #Logs in to Sentinel Hub once and reuses the token until shortly before it expires. A lock makes sure the parallel downloads don't all log in.
     """Reuse the token until 60 s before it expires (don't log in on every request)."""
     global _token, _token_expires_at
     async with _token_lock:  # two requests at once must not both fetch a token
@@ -72,7 +106,7 @@ async def _get_token(client: httpx.AsyncClient) -> str:    #Logs in to Sentinel 
 
 # ---------------------------------------------------------------- request
 
-def image_size(poly: Polygon, longest_side: int = 512) -> tuple[int, int]: #Picks the width and height so the image keeps the farm’s real shape (it isn’t stretched).
+def image_size(poly: Polygon, longest_side: int = 512) -> tuple[int, int]: #Picks the width and height so the image keeps the farm's real shape (it isn't stretched).
     """Width/height that keep the farm's real shape (a degree of longitude shrinks near the poles)."""
     min_lng, min_lat, max_lng, max_lat = poly.bounds
     width_m = (max_lng - min_lng) * math.cos(math.radians((min_lat + max_lat) / 2))
@@ -82,7 +116,9 @@ def image_size(poly: Polygon, longest_side: int = 512) -> tuple[int, int]: #Pick
     return max(1, round(longest_side * width_m / height_m)), longest_side
 
 
-def build_request(poly: Polygon, index: str, days: int = 30) -> dict:    #Builds the request: the farm’s bounding box, the last 30 days, the least cloudy image, and the image size.
+#Builds the request: the farm's bounding box, the last 30 days, the least cloudy image, and the image size.
+#`script` replaces the colour script (used for the class map); everything else stays identical so pixels line up.
+def build_request(poly: Polygon, index: str, days: int = 30, script: str | None = None) -> dict:
     width, height = image_size(poly)
     today = date.today()
     return {
@@ -111,7 +147,7 @@ def build_request(poly: Polygon, index: str, days: int = 30) -> dict:    #Builds
             "height": height,
             "responses": [{"identifier": "default", "format": {"type": "image/png"}}],
         },
-        "evalscript": evalscript(index),
+        "evalscript": script or evalscript(index),
     }
 
 
@@ -145,9 +181,9 @@ async def _call(path: str, payload: dict, accept: str) -> httpx.Response:
         raise HTTPException(502, "Satellite service is unreachable.") from exc
 
 
-async def fetch_index_png(poly: Polygon, index: str) -> bytes:     #Downloads one coloured index image (for example NDVI) for the farm.
+async def fetch_index_png(poly: Polygon, index: str, script: str | None = None) -> bytes:     #Downloads one index image (coloured, or the class map when `script` is given).
     """PNG of `index` over the polygon, from the least cloudy image of the last 30 days."""
-    r = await _call("/api/v1/process", build_request(poly, index), "image/png")
+    r = await _call("/api/v1/process", build_request(poly, index, script=script), "image/png")
     return r.content
 
 
@@ -239,7 +275,7 @@ def latest_clear_stats(body: dict, zones: dict, min_clear: float = 0.5) -> dict 
     return None
 
 
-async def fetch_index_stats(poly: Polygon, zones: dict, days: int = 30) -> dict | None:  #Gets the farm’s average value and colour percentages for each index from the satellite.
+async def fetch_index_stats(poly: Polygon, zones: dict, days: int = 30) -> dict | None:  #Gets the farm's average value and colour percentages for each index from the satellite.
     r = await _call("/api/v1/statistics", build_stats_request(poly, zones, days), "application/json")
     return latest_clear_stats(r.json(), zones)
 
@@ -250,18 +286,28 @@ def zone_edges(zone_list: list[tuple[str, float]]) -> list[float]:  #Turns the c
     return [-1000.0] + [value for _, value in zone_list[1:]] + [1000.0]
 
 
-async def fetch_all_index_pngs(poly: Polygon) -> dict[str, bytes | None]: #Starts all 6 index downloads at once (asyncio.gather). A failed one becomes None instead of breaking the rest.
-    """All index images at once. A failed image becomes None instead of failing the report."""
-    names = list(FORMULAS)
-    results = await asyncio.gather(
-        *(fetch_index_png(poly, name) for name in names),
-        return_exceptions=True,  # one failure must not cancel the others
-    )
-    images: dict[str, bytes | None] = {}
+# ---------------------------------------------------------------- many images at once
+
+#Runs several downloads at once; a failed one becomes None instead of breaking the rest.
+async def _gather_named(jobs: dict) -> dict[str, bytes | None]:
+    names = list(jobs)
+    results = await asyncio.gather(*jobs.values(), return_exceptions=True)
+    out: dict[str, bytes | None] = {}
     for name, result in zip(names, results):
         if isinstance(result, Exception):
             logger.warning("Image for %s failed: %s", name, result)
-            images[name] = None
+            out[name] = None
         else:
-            images[name] = result
-    return images
+            out[name] = result
+    return out
+
+
+async def fetch_all_index_pngs(poly: Polygon) -> dict[str, bytes | None]: #All 6 coloured images at once.
+    return await _gather_named({name: fetch_index_png(poly, name) for name in FORMULAS})
+
+
+async def fetch_all_class_pngs(poly: Polygon, zones: dict) -> dict[str, bytes | None]: #All class maps at once (only indices that have zones).
+    return await _gather_named({
+        name: fetch_index_png(poly, name, class_evalscript(name, zones[name]))
+        for name in FORMULAS if name in zones
+    })

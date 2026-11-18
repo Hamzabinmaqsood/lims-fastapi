@@ -12,6 +12,9 @@ from reportlab.platypus import Image as RLImage
 from reportlab.platypus import KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from app.core.urdu import urdu_paragraph
+from app.modules.reports.farm_mask import class_maps, class_percents, cut_to_farm, farm_mask
+
+SUB_LABELS = {"good": "Good", "normal": "Normal", "bad": "Bad"}
 
 STATUS_COLORS = {
     "low": colors.HexColor("#d7191c"),
@@ -87,6 +90,7 @@ def build_pdf(report: dict) -> bytes:
         Paragraph("Satellite index summary", styles["Heading2"]),
         _index_table(report),
         *_index_sections(report, doc.width),
+        *_submaps_section(report),              # ← new: at the END of the report
     ]
     doc.build(story)
     return buffer.getvalue()
@@ -118,25 +122,68 @@ def _index_sections(report: dict, width: float) -> list:
     return story
 
 
+# ---------------------------------------------------------------- images
 
-def outlined_image(png: bytes, ring: list[list[float]], max_w: float = 8 * cm, max_h: float = 8 * cm) -> RLImage:
-    """Satellite PNG with the farm boundary drawn on top, sized to fit max_w × max_h."""
-    img = PILImage.open(BytesIO(png)).convert("RGBA")
-    w, h = img.size
-
-    # The image covers exactly the farm's bounding box, so lng/lat map straight to pixels.
+def _ring_px(ring: list[list[float]], w: int, h: int) -> list[tuple[float, float]]:
+    """Farm boundary in pixels. The image covers exactly the farm's bounding box."""
     lngs, lats = [p[0] for p in ring], [p[1] for p in ring]
     min_lng, max_lng, min_lat, max_lat = min(lngs), max(lngs), min(lats), max(lats)
+    return [
+        ((lng - min_lng) / ((max_lng - min_lng) or 1) * (w - 1),
+         (max_lat - lat) / ((max_lat - min_lat) or 1) * (h - 1))   # pixel y grows DOWNWARD
+        for lng, lat in ring
+    ]
 
-    def to_px(lng: float, lat: float) -> tuple[float, float]:
-        x = (lng - min_lng) / ((max_lng - min_lng) or 1) * (w - 1)
-        y = (max_lat - lat) / ((max_lat - min_lat) or 1) * (h - 1)  # pixel y grows DOWNWARD
-        return x, y
 
-    ImageDraw.Draw(img).line([to_px(lng, lat) for lng, lat in ring], fill=(0, 0, 0, 255), width=3)
-
+def _to_rl(img: PILImage.Image, max_w: float, max_h: float) -> RLImage:
+    """Pillow image → ReportLab image that fits inside max_w × max_h."""
     out = BytesIO()
     img.save(out, "PNG")
     out.seek(0)
-    scale = min(max_w / w, max_h / h)
-    return RLImage(out, width=w * scale, height=h * scale)
+    scale = min(max_w / img.width, max_h / img.height)
+    return RLImage(out, width=img.width * scale, height=img.height * scale)
+
+
+def outlined_image(png: bytes, ring: list[list[float]], max_w: float = 8 * cm, max_h: float = 8 * cm) -> RLImage:
+    """Satellite PNG cut to the farm shape, with the boundary drawn on top."""
+    img = PILImage.open(BytesIO(png))
+    points = _ring_px(ring, *img.size)
+    img = cut_to_farm(img, farm_mask(img.size, points))         # outside the farm → white
+    ImageDraw.Draw(img).line(points, fill=(0, 0, 0), width=3)
+    return _to_rl(img, max_w, max_h)
+
+
+def _submaps_section(report: dict) -> list:
+    """For each index: up to 3 small maps (Good / Normal / Bad), only for classes present in the farm."""
+    images, class_images = report.get("images") or {}, report.get("class_images") or {}
+    if not class_images:
+        return []                                               # no class maps → no section (and no ring needed)
+    styles = getSampleStyleSheet()
+    ring = report["farm"]["ring"]
+    blocks = []
+    for i in report["indices"]:
+        png, cls_png = images.get(i["index"]), class_images.get(i["index"])
+        if not png or not cls_png:
+            continue                                            # a download failed → skip this index
+        img = PILImage.open(BytesIO(png))
+        classes = PILImage.open(BytesIO(cls_png)).convert("L")
+        if classes.size != img.size:
+            continue                                            # should never happen (same request size)
+        points = _ring_px(ring, *img.size)
+        mask = farm_mask(img.size, points)
+        maps, pct = class_maps(img, mask, classes), class_percents(mask, classes)
+        if not maps:
+            continue                                            # e.g. the whole farm was cloudy
+
+        cells, captions = [], []
+        for name, sub in maps.items():
+            ImageDraw.Draw(sub).line(points, fill=(0, 0, 0), width=2)
+            cells.append(_to_rl(sub, 5 * cm, 5 * cm))
+            captions.append(Paragraph(f"<b>{SUB_LABELS[name]}</b> — {pct[name]:.1f}%", styles["Normal"]))
+        table = Table([cells, captions], colWidths=[5.6 * cm] * len(cells), hAlign="LEFT")
+        table.setStyle(TableStyle([("ALIGN", (0, 0), (-1, -1), "CENTER"), ("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
+        blocks.append(KeepTogether([Spacer(1, 0.4 * cm), Paragraph(i["index"], styles["Heading3"]), table]))
+
+    if not blocks:
+        return []
+    return [Spacer(1, 0.7 * cm), Paragraph("Farm areas by condition", styles["Heading2"]), *blocks]

@@ -1,22 +1,17 @@
-from datetime import date
-
-from app.modules.reports import service
-from app.modules.reports.pdf import build_pdf
-from tests.test_farms import SQUARE, login_as
-from app.main import app
-
-from app.core.urdu import urdu_paragraph, wrap_logical
-
-from app.integrations import sentinel
-
 import io
+from datetime import date
 
 from PIL import Image
 from shapely.geometry import Polygon
 from sqlalchemy import text
 
-from app.modules.reports.pdf import outlined_image
+from app.core.urdu import urdu_paragraph, wrap_logical
+from app.integrations import sentinel
+from app.main import app
+from app.modules.reports import service
+from app.modules.reports.pdf import build_pdf, outlined_image
 from tests.conftest import engine
+from tests.test_farms import SQUARE, login_as
 
 RING = [[74.35, 31.52], [74.351, 31.52], [74.351, 31.521], [74.35, 31.521], [74.35, 31.52]]
 
@@ -35,9 +30,26 @@ SAMPLE = {
 }
 
 
+def png_bytes(w: int = 120, h: int = 100) -> bytes:
+    buf = io.BytesIO()
+    Image.new("RGBA", (w, h), (120, 200, 90, 255)).save(buf, "PNG")
+    return buf.getvalue()
+
+
+def class_png(w: int = 120, h: int = 100) -> bytes:
+    """Left half 'bad' (3), right half 'good' (1)."""
+    img = Image.new("L", (w, h), 1)
+    img.paste(3, (0, 0, w // 2, h))
+    buf = io.BytesIO()
+    img.save(buf, "PNG")
+    return buf.getvalue()
+
+
+# ---------------------------------------------------------------- PDF building
+
 def test_build_pdf_makes_a_pdf():
     pdf = build_pdf(SAMPLE)
-    assert pdf.startswith(b"%PDF")       # every PDF file starts like this
+    assert pdf.startswith(b"%PDF")          # every PDF file starts like this
     assert pdf.rstrip().endswith(b"%%EOF")  # ...and ends like this
     assert len(pdf) > 1000
 
@@ -46,34 +58,8 @@ def test_build_pdf_without_stage():
     assert build_pdf({**SAMPLE, "stage": None}).startswith(b"%PDF")
 
 
-# async def test_report_endpoint(client, monkeypatch):
-#     async def fake_health(db, user, farm_id):
-#         return {k: v for k, v in SAMPLE.items() if k != "farm"}
-
-#     monkeypatch.setattr(service, "farm_health", fake_health)
-#     h = await login_as(client, "03001111111")
-#     farm_id = (await client.post("/api/farms/", headers=h, json={"name": "F", "boundary": SQUARE})).json()["id"]
-
-#     r = await client.get(f"/api/farms/{farm_id}/report/", headers=h)
-#     assert r.status_code == 200
-#     assert r.headers["content-type"] == "application/pdf"
-#     assert r.content.startswith(b"%PDF")
-
-
-# async def test_other_users_report_404(client, monkeypatch):
-#     async def fake_health(db, user, farm_id):
-#         raise AssertionError("must not be called for someone else's farm")
-
-#     monkeypatch.setattr(service, "farm_health", fake_health)
-#     owner = await login_as(client, "03001111111")
-#     farm_id = (await client.post("/api/farms/", headers=owner, json={"name": "F", "boundary": SQUARE})).json()["id"]
-#     other = await login_as(client, "03002222222")
-#     assert (await client.get(f"/api/farms/{farm_id}/report/", headers=other)).status_code == 404
-
 def test_report_route_is_registered():
-    paths = app.openapi()["paths"]
-    assert "/api/farms/{farm_id}/report/" in paths
-
+    assert "/api/farms/{farm_id}/report/" in app.openapi()["paths"]
 
 
 def test_urdu_wraps_in_reading_order():
@@ -97,6 +83,24 @@ def test_pdf_with_urdu_sections():
     assert build_pdf(report).startswith(b"%PDF")
 
 
+def test_outlined_image_keeps_shape():
+    img = outlined_image(png_bytes(200, 100), RING)
+    assert round(img.drawWidth / img.drawHeight, 2) == 2.0  # 200×100 stays 2:1
+
+
+def test_pdf_with_images_is_bigger():
+    with_images = build_pdf({**SAMPLE, "farm": {**SAMPLE["farm"], "ring": RING},
+                             "images": {"NDVI": png_bytes()}})
+    assert len(with_images) > len(build_pdf(SAMPLE))
+
+
+def test_pdf_with_submaps_is_bigger():
+    base = {**SAMPLE, "farm": {**SAMPLE["farm"], "ring": RING}, "images": {"NDVI": png_bytes()}}
+    with_subs = build_pdf({**base, "class_images": {"NDVI": class_png()}})
+    assert len(with_subs) > len(build_pdf(base))
+
+
+# ---------------------------------------------------------------- endpoint
 
 async def test_report_endpoint(client, monkeypatch):
     async def fake_health(db, farm):
@@ -105,8 +109,12 @@ async def test_report_endpoint(client, monkeypatch):
     async def fake_images(poly):
         return {"NDVI": png_bytes(), "NDMI": None}
 
+    async def fake_classes(poly, zones):
+        return {"NDVI": class_png()}
+
     monkeypatch.setattr(service, "farm_health_for", fake_health)
     monkeypatch.setattr(sentinel, "fetch_all_index_pngs", fake_images)
+    monkeypatch.setattr(sentinel, "fetch_all_class_pngs", fake_classes)
     h = await login_as(client, "03001111111")
     farm_id = (await client.post("/api/farms/", headers=h, json={
         "name": "F", "boundary": SQUARE, "crop_id": None,
@@ -129,43 +137,23 @@ async def test_other_users_report_404(client, monkeypatch):
 
     monkeypatch.setattr(service, "farm_health_for", must_not_run)
     monkeypatch.setattr(sentinel, "fetch_all_index_pngs", must_not_run)
+    monkeypatch.setattr(sentinel, "fetch_all_class_pngs", must_not_run)
     owner = await login_as(client, "03001111111")
     farm_id = (await client.post("/api/farms/", headers=owner, json={"name": "F", "boundary": SQUARE})).json()["id"]
     other = await login_as(client, "03002222222")
     assert (await client.get(f"/api/farms/{farm_id}/report/", headers=other)).status_code == 404
 
 
-
-
-
-
-
-def png_bytes(w: int = 120, h: int = 100) -> bytes:
-    buf = io.BytesIO()
-    Image.new("RGBA", (w, h), (120, 200, 90, 255)).save(buf, "PNG")
-    return buf.getvalue()
-
-
-def test_outlined_image_keeps_shape():
-    img = outlined_image(png_bytes(200, 100), RING)
-    assert round(img.drawWidth / img.drawHeight, 2) == 2.0  # 200×100 stays 2:1
-
-
-def test_pdf_with_images_is_bigger():
-    with_images = build_pdf({**SAMPLE, "farm": {**SAMPLE["farm"], "ring": RING},
-                             "images": {"NDVI": png_bytes()}})
-    assert len(with_images) > len(build_pdf(SAMPLE))
-
+# ---------------------------------------------------------------- downloads
 
 async def test_one_failed_image_does_not_break_the_rest(monkeypatch):
-    async def fake_png(poly, index):
+    async def fake_png(poly, index, script=None):
         if index == "NDMI":
             raise RuntimeError("boom")
         return b"png"
 
     monkeypatch.setattr(sentinel, "fetch_index_png", fake_png)
-    poly = Polygon(RING)
-    images = await sentinel.fetch_all_index_pngs(poly)
+    images = await sentinel.fetch_all_index_pngs(Polygon(RING))
     assert images["NDMI"] is None
     assert images["NDVI"] == b"png"
     assert len(images) == 6
